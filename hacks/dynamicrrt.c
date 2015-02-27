@@ -163,6 +163,21 @@ static void list_delete(List *list, void (*val_delete)(void*))
   *list = NULL;
 }
 
+static void list_concatenate(List *list1, List list2)
+{
+  if (!list1)
+    return;
+
+  if (!*list1) {
+    *list1 = list2;
+  } else if (list2) {
+    Item *item, *prev_item;
+    for (item = *list1; item != NULL; prev_item = item,  item = item->next);
+    prev_item->next = list2;
+    list2->previous = prev_item;
+  }
+}
+
 /*
  * ----------------------------------------
  *  TREE
@@ -329,10 +344,31 @@ static void rrt_prune(List *trees, Obstacle* obstacles, int nbobstacles)
     old_i_tree = i_tree;
     i_tree = i_tree->next;
 
-    // Rebuild tree if cut
+    // Rebuild trees if cut
     if (rebuild_tree) {
+      List visited_nodes;
+      Tree *new_tree;
+      Node *extracted_node;
+
       for (i_node1 = tree->nodes; i_node1 != NULL; i_node1 = i_node1->next) {
-        /*Tree *new_tree = malloc(sizeof(Tree));*/
+        node1 = i_node1->val;
+        node1->marked = false;
+      }
+
+      for (i_node1 = tree->nodes; i_node1 != NULL; i_node1 = i_node1->next) {
+        while (tree->nodes != NULL) {
+          new_tree = malloc(sizeof(Tree));
+          list_insert(&visited_nodes, i_node1->val);
+          while (visited_nodes != NULL) {
+            extracted_node = list_extract(&visited_nodes, visited_nodes);
+            tree_insert_node(new_tree, extracted_node);
+            for (i_node2 = extracted_node->neighbors; i_node2 != NULL; i_node2 = i_node2->next) {
+              node2 = i_node2->val;
+              if (!node2->marked)
+                list_insert(&visited_nodes, node2);
+            }
+          }
+        }
       }
     }
   }
@@ -723,10 +759,6 @@ static const char *dynamicrrt_defaults [] = {
 #endif
   0
 };
-
-int a = 1;
-int dsffqdsa = 1;
-int fqdsa = 1;
 
 static XrmOptionDescRec dynamicrrt_options [] = {
   { "-delay"          , ".delay"       , XrmoptionSepArg, 0 } ,
