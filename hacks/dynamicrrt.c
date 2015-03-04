@@ -137,6 +137,11 @@ static void* list_extract(List *list, Item *item)
   return val;
 }
 
+static void* list_pop(List *list)
+{
+  return list_extract(list, *list);
+}
+
 static Item* list_search(List list, void *val)
 {
   Item *item;
@@ -291,8 +296,8 @@ static bool circle_line_collision(Point *c_center, int radius, Point *line_p1, P
 
 static void rrt_prune(List *trees, Obstacle* obstacles, int nbobstacles)
 {
-  Item *i_tree, *old_i_tree;
   Tree *tree;
+  List new_trees;
   Item *i_node1, *i_node2;
   Node *node1, *node2;
   int i_obstacle;
@@ -300,8 +305,8 @@ static void rrt_prune(List *trees, Obstacle* obstacles, int nbobstacles)
   bool delete_node, rebuild_tree;
 
   // Delete nodes and edges colliding with obstacles
-  for (i_tree = *trees; i_tree != NULL; ) {
-    tree = i_tree->val;
+  while (*trees != NULL) {
+    tree = list_pop(trees);
 
     for (i_node1 = tree->nodes; i_node1 != NULL; ) {
       node1 = i_node1->val;
@@ -341,9 +346,6 @@ static void rrt_prune(List *trees, Obstacle* obstacles, int nbobstacles)
       }
     }
 
-    old_i_tree = i_tree;
-    i_tree = i_tree->next;
-
     // Rebuild trees if cut
     if (rebuild_tree) {
       List visited_nodes;
@@ -355,23 +357,27 @@ static void rrt_prune(List *trees, Obstacle* obstacles, int nbobstacles)
         node1->marked = false;
       }
 
-      for (i_node1 = tree->nodes; i_node1 != NULL; i_node1 = i_node1->next) {
-        while (tree->nodes != NULL) {
-          new_tree = malloc(sizeof(Tree));
-          list_insert(&visited_nodes, i_node1->val);
-          while (visited_nodes != NULL) {
-            extracted_node = list_extract(&visited_nodes, visited_nodes);
-            tree_insert_node(new_tree, extracted_node);
-            for (i_node2 = extracted_node->neighbors; i_node2 != NULL; i_node2 = i_node2->next) {
-              node2 = i_node2->val;
-              if (!node2->marked)
-                list_insert(&visited_nodes, node2);
+      while (tree->nodes != NULL) {
+        new_tree = malloc(sizeof(Tree));
+        list_insert(&visited_nodes, i_node1->val);
+        while (visited_nodes != NULL) {
+          extracted_node = list_pop(&visited_nodes);
+          tree_insert_node(new_tree, extracted_node);
+          for (i_node2 = extracted_node->neighbors; i_node2 != NULL; i_node2 = i_node2->next) {
+            node2 = i_node2->val;
+            if (!node2->marked) {
+              list_remove(&tree->nodes, node2);
+              node2->marked = true;
+              list_insert(&visited_nodes, node2);
             }
           }
         }
+        list_insert(&new_trees, new_tree);
       }
     }
   }
+
+  trees = &new_trees;
 }
 
 static void rrt_search()
