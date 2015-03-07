@@ -203,7 +203,8 @@ static void tree_remove_node(Tree *tree, Item *i_node)
   free(node);
 }
 
-static void tree_remove_edge(Node *node1, Node *node2) {
+static void tree_remove_edge(Node *node1, Node *node2)
+{
   if (node1 && node2) {
     list_remove(&node1->neighbors, node2);
     list_remove(&node2->neighbors, node1);
@@ -224,7 +225,8 @@ static void tree_delete(Tree *tree)
   free(tree);
 }
 
-static void tree_insert_node(Tree *tree, Node *node) {
+static void tree_insert_node(Tree *tree, Node *node)
+{
   if (!tree->root)
     tree->root = node;
   list_insert(&tree->nodes, node);
@@ -251,7 +253,8 @@ static float vector_norm(Point *p)
   return vector_dot(p, p);
 }
 
-static bool point_inside_circle(Point *c_center, int radius, Point *p) {
+static bool point_inside_circle(Point *c_center, int radius, Point *p)
+{
   Point v_cp;
 
   // vect(c, p)
@@ -280,7 +283,7 @@ static bool circle_line_collision(Point *c_center, int radius, Point *line_p1, P
   if (p1c < 0 || p1c > p1p2) {
     // Check if any point of the line is inside the circle
     return point_inside_circle(c_center, radius, line_p1)
-      || point_inside_circle(c_center, radius, line_p2);
+           || point_inside_circle(c_center, radius, line_p2);
   }
 
   // Check if the distance from the center of circle to vect(p1, p2) is
@@ -421,9 +424,7 @@ static void * dynamicrrt_init(Display *dpy, Window win)
 
   st->nbcolors = NB_COLORS;
   st->colors = (XColor *) malloc(sizeof(*st->colors) * (st->nbcolors+1));
-  make_random_colormap (wa.screen, wa.visual, wa.colormap,
-      st->colors, &st->nbcolors,
-      True, True, 0, True);
+  make_random_colormap (wa.screen, wa.visual, wa.colormap, st->colors, &st->nbcolors, True, True, 0, True);
 
   st->delay = get_integer_resource(st->dpy, "delay", "Integer");
 
@@ -470,8 +471,7 @@ static void * dynamicrrt_init(Display *dpy, Window win)
   st->mapHeight = wa.height - 2 * OFFSET;
   st->cmap = wa.colormap;
   st->gcDraw = XCreateGC(st->dpy, st->window, 0, &st->gcv);
-  st->gcv.foreground = get_pixel_resource(st->dpy, st->cmap,
-      "background", "Background");
+  st->gcv.foreground = get_pixel_resource(st->dpy, st->cmap, "background", "Background");
   st->gcClear = XCreateGC(st->dpy, st->window, GCForeground, &st->gcv);
 
   if (st->dbuf) {
@@ -480,8 +480,7 @@ static void * dynamicrrt_init(Display *dpy, Window win)
       st->bb = XCreatePixmap(st->dpy, st->window, st->scrWidth, st->scrHeight, wa.depth);
       st->b = st->ba;
     }
-  }
-  else
+  } else
     st->b = st->window;
 
   if (st->ba) XFillRectangle(st->dpy, st->ba, st->gcClear, 0, 0, st->scrWidth, st->scrHeight);
@@ -492,240 +491,11 @@ static void * dynamicrrt_init(Display *dpy, Window win)
   return st;
 }
 
-/*static void draw_searcher(struct state *st, Drawable curr_window, int i)*/
-/*{*/
-  /*Point r1, r2;*/
-  /*PList *l;*/
-
-  /*if(st->searcher[i] == NULL)*/
-    /*return;*/
-
-  /*XSetForeground(st->dpy, st->gcDraw, st->searcher[i]->color);*/
-
-  /*r1.x = X(st->searcher[i]->r.x) + st->searcher[i]->rs;*/
-  /*r1.y = Y(st->searcher[i]->r.y);*/
-
-  /*XFillRectangle(st->dpy, curr_window, st->gcDraw, r1.x - 2, r1.y - 2, 4, 4);*/
-
-  /*for(l = st->searcher[i]->hist; l != NULL; l = l->next) {*/
-
-    /*r2.x = X(l->r.x) + st->searcher[i]->rs;*/
-    /*r2.y = Y(l->r.y);*/
-
-    /*XDrawLine(st->dpy, curr_window, st->gcDraw, r1.x, r1.y, r2.x, r2.y);*/
-
-    /*r1 = r2;*/
-  /*}*/
-
-/*}*/
-
-/*static void draw_image(struct state *st, Drawable curr_window)*/
-/*{*/
-  /*int i, j;*/
-  /*int x, y;*/
-
-  /*for(i = 0; i < st->max_src; i++) {*/
-
-    /*if(st->source[i] == NULL)*/
-      /*continue;*/
-
-    /*XSetForeground(st->dpy, st->gcDraw, st->source[i]->color);*/
-
-    /*if(st->source[i]->inv_rate > 0) {*/
-
-      /*if(st->max_searcher > 0) {*/
-        /*x = (int) X(st->source[i]->r.x);*/
-        /*y = (int) Y(st->source[i]->r.y);*/
-        /*j = st->dx * (MAX_INV_RATE + 1 - st->source[i]->inv_rate) / (2 * MAX_INV_RATE);*/
-        /*if(j == 0)*/
-          /*j = 1;*/
-        /*XFillArc(st->dpy, curr_window, st->gcDraw, x - j, y - j, 2 * j, 2 * j, 0, 360 * 64);*/
-      /*}}*/
-
-    /*for(j = 0; j < st->source[i]->n; j++) {*/
-
-      /*if(st->source[i]->yv[j].v == 2)*/
-        /*continue;*/
-
-       /*Move the particles slightly off lattice */
-      /*x =  X(st->source[i]->r.x + 1 + j) + RND(st->dx);*/
-      /*y = Y(st->source[i]->r.y + st->source[i]->yv[j].y) + RND(st->dy);*/
-      /*XFillArc(st->dpy, curr_window, st->gcDraw, x - 2, y - 2, 4, 4, 0, 360 * 64);*/
-    /*}*/
-
-  /*}*/
-
-  /*for(i = 0; i < st->max_searcher; i++)*/
-    /*draw_searcher(st, curr_window, i);*/
-
-/*}*/
-
-static void animate_dynamicrrt(struct state *st, Drawable curr_window)
-{
-  int i, j;
-  Bool dead;
-
-  for(i = 0; i < st->max_src; i++) {
-
-    if(st->source[i] == NULL)
-      continue;
-
-    evolve_source(st->source[i]);
-
-    /* reap dead sources for which all particles are gone */
-    if(st->source[i]->inv_rate == 0) {
-
-      dead = True;
-
-      for(j = 0; j < st->source[i]->n; j++) {
-        if(st->source[i]->yv[j].v != 2) {
-          dead = False;
-          break;
-        }
-      }
-
-      if(dead == True) {
-        destroy_source(st->source[i]);
-        st->source[i] = NULL;
-      }
-    }
-  }
-
-  /* Decide if we want to add new  sources */
-
-  for(i = 0; i < st->max_src; i++) {
-    if(st->source[i] == NULL && RND(st->max_dist * st->max_src) == 0)
-      st->source[i] = new_source(st);
-  }
-
-  if(st->max_searcher == 0) { /* kill some sources when searchers don't do that */
-    for(i = 0; i < st->max_src; i++) {
-      if(st->source[i] != NULL && RND(st->max_dist * st->max_src) == 0) {
-        destroy_source(st->source[i]);
-        st->source[i] = 0;
-      }
-    }
-  }
-
-  /* Now deal with searchers */
-
-  for(i = 0; i < st->max_searcher; i++) {
-
-    if((st->searcher[i] != NULL) && (st->searcher[i]->state == DONE)) {
-      destroy_searcher(st->searcher[i]);
-      st->searcher[i] = NULL;
-    }
-
-    if(st->searcher[i] == NULL) {
-
-      if(RND(st->max_dist * st->max_searcher) == 0) {
-
-        st->searcher[i] = new_searcher(st);
-
-      }
-    }
-
-    if(st->searcher[i] == NULL)
-      continue;
-
-    /* Check if searcher found a source or missed all of them */
-    for(j = 0; j < st->max_src; j++) {
-
-      if(st->source[j] == NULL || st->source[j]->inv_rate == 0)
-        continue;
-
-      if(st->searcher[i]->r.x < 0) {
-        st->searcher[i]->state = DONE;
-        break;
-      }
-
-      if((st->source[j]->r.y == st->searcher[i]->r.y) &&
-          (st->source[j]->r.x == st->searcher[i]->r.x)) {
-        st->searcher[i]->state = DONE;
-        st->source[j]->inv_rate = 0;  /* source disappears */
-
-        /* Make it flash */
-        st->searcher[i]->color = WhitePixel(st->dpy, DefaultScreen(st->dpy));
-
-        break;
-      }
-    }
-
-    st->searcher[i]->c = 0; /* set it here in case we don't get to get_v() */
-
-    /* Find the concentration at searcher's location */
-
-    if(st->searcher[i]->state != DONE) {
-      for(j = 0; j < st->max_src; j++) {
-
-        if(st->source[j] == NULL)
-          continue;
-
-        get_v(st->source[j], st->searcher[i]);
-
-        if(st->searcher[i]->c == 1)
-          break;
-      }
-    }
-
-    move_searcher(st->searcher[i]);
-
-  }
-
-  draw_image(st, curr_window);
-}
-
 static unsigned long dynamicrrt_draw(Display *dpy, Window window, void *closure)
 {
-  struct state *st = (struct state *) closure;
-  XWindowAttributes wa;
-  int w, h;
-
-  XGetWindowAttributes(st->dpy, st->window, &wa);
-
-  w = wa.width;
-  h = wa.height;
-
-  if(w != st->scrWidth || h != st->scrHeight) {
-    st->scrWidth = w;
-    st->scrHeight = h;
-    st->ax = st->scrWidth / (double) st->max_dist;
-    st->ay = st->scrHeight / (2. * st->max_dist);
-    st->bx = 0.;
-    st->by = 0.;
-
-    if((st->dx = st->scrWidth / (2 * st->max_dist)) == 0)
-      st->dx = 1;
-    if((st->dy = st->scrHeight / (4 * st->max_dist)) == 0)
-      st->dy = 1;
-    XSetLineAttributes(st->dpy, st->gcDraw, st->dx / 3 + 1, LineSolid, CapRound, JoinRound);
-  }
-
-  XFillRectangle (st->dpy, st->b, st->gcClear, 0, 0, st->scrWidth, st->scrHeight);
-  animate_dynamicrrt(st, st->b);
-
-#ifdef HAVE_DOUBLE_BUFFER_EXTENSION
-  if (st->backb) {
-    XdbeSwapInfo info[1];
-    info[0].swap_window = st->window;
-    info[0].swap_action = XdbeUndefined;
-    XdbeSwapBuffers(st->dpy, info, 1);
-  }
-  else
-#endif
-    if (st->dbuf) {
-      XCopyArea(st->dpy, st->b, st->window, st->gcClear, 0, 0,
-          st->scrWidth, st->scrHeight, 0, 0);
-      st->b = (st->b == st->ba ? st->bb : st->ba);
-    }
-
-  return st->delay;
 }
 
-
-
-static void dynamicrrt_reshape(Display *dpy, Window window, void *closure,
-    unsigned int w, unsigned int h)
+static void dynamicrrt_reshape(Display *dpy, Window window, void *closure, unsigned int w, unsigned int h)
 {
 }
 
@@ -736,19 +506,6 @@ static Bool dynamicrrt_event (Display *dpy, Window window, void *closure, XEvent
 
 static void dynamicrrt_free(Display *dpy, Window window, void *closure)
 {
-  struct state *st = (struct state *) closure;
-  int i;
-  if (st->source) {
-    for (i = 0; i < st->max_src; i++)
-      if (st->source[i]) destroy_source (st->source[i]);
-    free (st->source);
-  }
-  if (st->searcher) {
-    for (i = 0; i < st->max_searcher; i++)
-      if (st->searcher[i]) destroy_searcher (st->searcher[i]);
-    free (st->searcher);
-  }
-  free (st);
 }
 
 
