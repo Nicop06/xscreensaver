@@ -94,6 +94,7 @@ struct state {
   Point start, goal;
 
   List trees;
+  int max_trees;
 };
 
 /*
@@ -102,7 +103,7 @@ struct state {
  * ----------------------------------------
  */
 
-static void list_insert(List *list, void* val)
+static Item* list_insert(List *list, void* val)
 {
   Item *item = malloc(sizeof(Item));
   item->val = val;
@@ -113,6 +114,7 @@ static void list_insert(List *list, void* val)
     (*list)->previous = item;
 
   *list = item;
+  return item;
 }
 
 static void* list_extract(List *list, Item *item)
@@ -297,7 +299,7 @@ static bool circle_line_collision(Point *c_center, int radius, Point *line_p1, P
  * ----------------------------------------
  */
 
-static void rrt_prune(List *trees, Obstacle* obstacles, int nbobstacles)
+static void rrt_prune(List *trees, Obstacle* obstacles, int nbobstacles, int max_trees)
 {
   Tree *tree;
   List new_trees;
@@ -354,6 +356,8 @@ static void rrt_prune(List *trees, Obstacle* obstacles, int nbobstacles)
       List visited_nodes;
       Tree *new_tree;
       Node *extracted_node;
+      Item *i_smallest_tree;
+      int tree_size, smallest_tree_size = 0, nbtrees = 0;
 
       for (i_node1 = tree->nodes; i_node1 != NULL; i_node1 = i_node1->next) {
         node1 = i_node1->val;
@@ -362,10 +366,12 @@ static void rrt_prune(List *trees, Obstacle* obstacles, int nbobstacles)
 
       while (tree->nodes != NULL) {
         new_tree = malloc(sizeof(Tree));
+        tree_size = 0;
         list_insert(&visited_nodes, i_node1->val);
         while (visited_nodes != NULL) {
           extracted_node = list_pop(&visited_nodes);
           tree_insert_node(new_tree, extracted_node);
+          tree_size++;
           for (i_node2 = extracted_node->neighbors; i_node2 != NULL; i_node2 = i_node2->next) {
             node2 = i_node2->val;
             if (!node2->marked) {
@@ -375,7 +381,18 @@ static void rrt_prune(List *trees, Obstacle* obstacles, int nbobstacles)
             }
           }
         }
-        list_insert(&new_trees, new_tree);
+
+        // Only keep the biggest trees
+        if (++nbtrees > max_trees) {
+          if (tree_size > smallest_tree_size) {
+            list_extract(&new_trees, i_smallest_tree);
+            i_smallest_tree = list_insert(&new_trees, new_tree);
+            smallest_tree_size = tree_size;
+          }
+        } else {
+          i_smallest_tree = list_insert(&new_trees, new_tree);
+          smallest_tree_size = tree_size;
+        }
       }
     }
   }
@@ -453,6 +470,11 @@ static void * dynamicrrt_init(Display *dpy, Window win)
   if (st->robot_speed < 0.0)
     st->robot_speed = 0.0;
 
+  st->max_trees = get_integer_resource(st->dpy, "max_trees", "Integer");
+
+  if (st->max_trees < 1)
+    st->max_trees = 1;
+
   st->dbuf = True;
 
 # ifdef HAVE_COCOA
@@ -524,13 +546,14 @@ static const char *dynamicrrt_defaults [] = {
 };
 
 static XrmOptionDescRec dynamicrrt_options [] = {
-  { "-delay"          , ".delay"       , XrmoptionSepArg, 0 } ,
-  { "-obstacle_radius", ".radius"      , XrmoptionSepArg, 0 } ,
-  { "-robot-radius"   , ".robot_radius", XrmoptionSepArg, 0 } ,
-  { "-max-speed"      , ".max_speed"   , XrmoptionSepArg, 0 } ,
-  { "-robot-speed"    , ".robot_speed" , XrmoptionSepArg, 0 } ,
-  { "-sources"        , ".sources"     , XrmoptionSepArg, 0 } ,
-  { "-obstacles"      , ".obstacles"   , XrmoptionSepArg, 0 } ,
+  { "-delay"          , ".delay"       , XrmoptionSepArg, 0 },
+  { "-obstacle_radius", ".radius"      , XrmoptionSepArg, 0 },
+  { "-robot-radius"   , ".robot_radius", XrmoptionSepArg, 0 },
+  { "-max-speed"      , ".max_speed"   , XrmoptionSepArg, 0 },
+  { "-robot-speed"    , ".robot_speed" , XrmoptionSepArg, 0 },
+  { "-max-trees"      , ".max_trees"   , XrmoptionSepArg, 0 },
+  { "-sources"        , ".sources"     , XrmoptionSepArg, 0 },
+  { "-obstacles"      , ".obstacles"   , XrmoptionSepArg, 0 },
   { 0                 , 0              , 0              , 0 }
 };
 
