@@ -56,12 +56,13 @@ typedef struct Node {
   Point pos;
   bool marked;
   float dist;
-  Node *prev;
+  struct Node *prev;
   List neighbors;
 } Node;
 
 typedef struct {
   List nodes;
+  int size;
 } Tree;
 
 struct state {
@@ -112,18 +113,33 @@ struct state {
  * ----------------------------------------
  */
 
-static Item* list_insert(List *list, void* val)
+static Item* list_insert_after(List *list, Item *prev_item, void* val)
 {
   Item *item = malloc(sizeof(Item));
   item->val = val;
-  item->previous = NULL;
-  item->next = *list;
+  item->previous = item;
 
-  if (*list)
-    (*list)->previous = item;
+  if (prev_item) {
+    item->next = prev_item->next;
+    prev_item->next = item;
 
-  *list = item;
+    if (prev_item->next)
+      prev_item->next->previous = item;
+  } else {
+    item->next = *list;
+
+    if (*list)
+      (*list)->previous = item;
+
+    *list = item;
+  }
+
   return item;
+}
+
+static Item* list_insert(List *list, void* val)
+{
+  return list_insert_after(list, NULL, val);
 }
 
 static void* list_extract(List *list, Item *item)
@@ -213,6 +229,7 @@ static void tree_remove_node(Tree *tree, Item *i_node)
 
   list_remove(&tree->nodes, node);
   free(node);
+  --tree->size;
 }
 
 static void tree_remove_edge(Node *node1, Node *node2)
@@ -248,6 +265,7 @@ static Node* tree_connect_point(Tree *tree, Node *tree_node, Point pos)
   }
 
   list_insert(&tree->nodes, new_node);
+  ++tree->size;
   return new_node;
 }
 
@@ -346,22 +364,69 @@ static Point rrt_random_point(struct state *st)
   return pos;
 }
 
+static void rrt_insert_tree(struct state *st, Tree *new_tree)
+{
+  Tree *tree;
+  Item *prev_i_tree = NULL;
+  Item *i_tree;
+
+  // Insert the new tree such that the trees are sorted by size
+  for (i_tree = st->trees; i_tree != NULL; prev_i_tree = i_tree, i_tree = i_tree->next) {
+    tree = i_tree->val;
+    if (new_tree->size > tree->size)
+      break;
+  }
+
+  list_insert_after(&st->trees, prev_i_tree, tree);
+
+  // Remove the smallest tree if the list is too big
+  if (++st->nbtrees > st->max_trees) {
+    tree = list_pop(&st->trees);
+    --st->nbtrees;
+
+    // Do not delete the current tree (holding the path)
+    if (tree != st->current_tree && tree != NULL)
+      tree_delete(tree);
+  }
+}
+
+static void rrt_check_path(struct state *st)
+{
+  Item *i_node;
+  Node *node;
+
+  if (!st->path)
+    return;
+
+  // Check if path is conneted
+  for (i_node = st->path; i_node != NULL; i_node = i_node->next) {
+    node = i_node->val;
+    if (!i_node->next || !list_search(node->neighbors, i_node->next->val)) {
+      // The path is broken, delete it and remove the current tree
+      list_delete(&st->path, NULL);
+      st->current_tree = NULL;
+      return;
+    }
+  }
+}
+
 static void rrt_prune(struct state *st)
 {
   Tree *tree;
-  List new_trees;
-  Item *i_smallest_tree;
+  List old_trees;
   Tree *new_tree;
   Item *i_node1, *i_node2;
   Node *node1, *node2;
   bool rebuild_tree;
-  int tree_size, smallest_tree_size = 0;
+  int tree_size;
 
+  old_trees = st->trees;
+  st->trees = NULL;
   st->nbtrees = 0;
 
   // Delete nodes and edges colliding with obstacles
-  while (st->trees != NULL) {
-    tree = list_pop(&st->trees);
+  while (old_trees != NULL) {
+    tree = list_pop(&old_trees);
 
     for (i_node1 = tree->nodes; i_node1 != NULL; ) {
       node1 = i_node1->val;
@@ -382,8 +447,18 @@ static void rrt_prune(struct state *st)
     tree_size = 0;
     if (rebuild_tree) {
       List visited_nodes;
-      Node *extracted_node;
+      Node *extracted_node, *path_node = NULL;
 
+      // Check if the path if connected and nullify it if not
+      if (tree == st->current_tree) {
+        rrt_check_path(st);
+
+        // Store the first node of the path
+        if (st->path)
+          path_node = st->path->val;
+      }
+
+      // Prepare tree rebuilding
       for (i_node1 = tree->nodes; i_node1 != NULL; i_node1 = i_node1->next) {
         node1 = i_node1->val;
         node1->marked = false;
@@ -391,47 +466,47 @@ static void rrt_prune(struct state *st)
 
       while (tree->nodes != NULL) {
         new_tree = malloc(sizeof(Tree));
-        tree_size = 0;
-        list_insert(&visited_nodes, i_node1->val);
+        new_tree->size = 0;
+
+        node1 = list_pop(&tree->nodes);
+        node1->marked = true;
+        list_insert(&visited_nodes, node1);
+
+        // Create a tree listing all the connected nodes
         while (visited_nodes != NULL) {
           extracted_node = list_pop(&visited_nodes);
           list_insert(&new_tree->nodes, extracted_node);
-          ++tree_size;
-          for (i_node2 = extracted_node->neighbors; i_node2 != NULL; i_node2 = i_node2->next) {
-            node2 = i_node2->val;
-            if (!node2->marked) {
-              list_remove(&tree->nodes, node2);
-              node2->marked = true;
-              list_insert(&visited_nodes, node2);
+          ++new_tree->size;
+
+          // Go through the neighbors not already visited and add them to the new tree
+          for (i_node1 = extracted_node->neighbors; i_node1 != NULL; i_node1 = i_node1->next) {
+            node1 = i_node1->val;
+            if (!node1->marked) {
+              list_remove(&tree->nodes, node1);
+              node1->marked = true;
+              list_insert(&visited_nodes, node1);
+
+              // The tree containing the path is the current tree
+              if (path_node) {
+                st->current_tree = new_tree;
+                path_node = NULL;
+              }
             }
           }
         }
-      }
-    } else {
-      new_tree = tree;
-      for (i_node1 = tree->nodes; i_node1 != NULL; i_node1 = i_node1->next)
-        ++tree_size;
-    }
 
-    // Only keep the biggest trees
-    if (st->nbtrees >= st->max_trees) {
-      if (tree_size > smallest_tree_size) {
-        list_extract(&new_trees, i_smallest_tree);
-        i_smallest_tree = list_insert(&new_trees, new_tree);
-        smallest_tree_size = tree_size;
-        ++st->nbtrees;
+        // Add the new tree to tree list
+        rrt_insert_tree(st, new_tree);
       }
     } else {
-      Item *i_tree = list_insert(&new_trees, new_tree);
-      if (!i_smallest_tree || tree_size > smallest_tree_size) {
-        i_smallest_tree = i_tree;
-        smallest_tree_size = tree_size;
-      }
-      ++st->nbtrees;
+      rrt_insert_tree(st, tree);
     }
   }
 
-  st->trees = new_trees;
+  if (st->current_tree) {
+    list_insert(&st->trees, st->current_tree);
+    ++st->nbtrees;
+  }
 }
 
 static Node* rrt_nearest_neighbor(Tree *tree, Point pos, float *distance)
@@ -458,8 +533,9 @@ static Node* rrt_nearest_neighbor(Tree *tree, Point pos, float *distance)
 static bool rrt_extend_trees(struct state *st)
 {
   float action = frand(1.0);
+
   if (action < GOAL_ACTION) {
-    // Try to connect to goal
+    // Try to connect to the goal
     Node *nearest_node = rrt_nearest_neighbor(st->current_tree, st->goal, NULL);
     if (!line_obstacles_collision(st->obstacles, st->nbobstacles, nearest_node->pos, st->goal)) {
       st->goal_node = tree_connect_point(st->current_tree, nearest_node, st->goal);
@@ -481,7 +557,7 @@ static bool rrt_extend_trees(struct state *st)
 
     tree = list_extract(&st->trees, i_tree);
 
-    // Find the nearest node of the two trees
+    // Find the nearest nodes between the current and the select tree
     for (i_node = st->current_tree->nodes; i_node != NULL; i_node = i_node->next) {
       cur_node = i_node->val;
       node = rrt_nearest_neighbor(tree, cur_node->pos, &dist);
@@ -497,6 +573,7 @@ static bool rrt_extend_trees(struct state *st)
       list_insert(&cur_nearest_node->neighbors, nearest_node);
       list_insert(&nearest_node->neighbors, cur_nearest_node);
       list_concatenate(&st->current_tree->nodes, tree->nodes);
+      st->current_tree->size += tree->size;
       --st->nbtrees;
       free(tree);
       if (list_search(st->current_tree->nodes, st->goal_node))
@@ -511,30 +588,19 @@ static bool rrt_extend_trees(struct state *st)
   return false;
 }
 
-static bool rrt_compute_path(struct state *st)
+static void rrt_compute_path(struct state *st)
 {
   Item *i_node, *i_next_node, *i_tree;
   Node *node, *start_node, *cur_node;
   Tree *tree;
   float dist, min_dist = -1.0;
-  bool connected = st->path != NULL;
   List opened_nodes;
 
-  // Check if path is conneted
-  for (i_node = st->path; i_node != NULL; i_node = i_node->next) {
-    node = i_node->val;
-    if (!i_node->next || !list_search(node->neighbors, i_node->next->val)) {
-      connected = false;
-      break;
-    }
-  }
+  // We already have a valid path
+  if (st->path)
+    return;
 
-  if (connected)
-    return true;
-
-  st->path = NULL;
-
-  // Compute current tree
+  // Find the nearest tree to the robot
   for (i_tree = st->trees; i_tree != NULL; i_tree = i_tree->next) {
     node = rrt_nearest_neighbor(i_tree->val, st->robot.pos, &dist);
     if (dist < min_dist || min_dist < 0.0) {
@@ -544,19 +610,24 @@ static bool rrt_compute_path(struct state *st)
     }
   }
 
+  // Compute the current tree by trying to connect the robot to the nearest tree
   if (!line_obstacles_collision(st->obstacles, st->nbobstacles, start_node->pos, st->robot.pos)) {
     st->current_tree = tree;
-    tree_connect_point(tree, start_node, st->robot.pos);
+    start_node = tree_connect_point(tree, start_node, st->robot.pos);
   } else {
     st->current_tree = malloc(sizeof(Tree));
+    st->current_tree->size = 1;
     start_node = tree_connect_point(st->current_tree, NULL, st->robot.pos);
     list_insert(&st->trees, st->current_tree);
+    ++st->nbtrees;
   }
 
+  // There is no way to the goal, don't look for a path
   if (!list_search(st->current_tree->nodes, st->goal_node))
-    return false;
+    return;
 
   // Find shortest path (Dijkstra's algorithm)
+  // STEP 1: Initialization
   for (i_node = st->current_tree->nodes; i_node != NULL; i_node = i_node->next) {
     node = i_node->val;
     node->marked = false;
@@ -568,6 +639,7 @@ static bool rrt_compute_path(struct state *st)
   start_node->marked = true;
   node = NULL;
 
+  // STEP 2: Algorithm
   while (node != st->goal_node && opened_nodes != NULL) {
     min_dist = -1.0;
     for (i_node = opened_nodes; i_node != NULL; i_node = i_node->next) {
@@ -599,14 +671,18 @@ static bool rrt_compute_path(struct state *st)
     }
   }
 
+  // STEP 3: Compute path
   if (cur_node == st->goal_node) {
     for (node = st->goal_node; node != NULL; node = node->prev) {
       list_insert(&st->path, node);
     }
-    return true;
   }
+}
 
-  return false;
+static void rrt_free(struct state *st)
+{
+  list_delete(&st->path, NULL);
+  list_delete(&st->trees, (void (*)(void*)) &tree_delete);
 }
 
 static void rrt_simulation_init(struct state *st)
@@ -724,6 +800,8 @@ static void * dynamicrrt_init(Display *dpy, Window win)
 
 static unsigned long dynamicrrt_draw(Display *dpy, Window window, void *closure)
 {
+  struct state *st = (struct state*) closure;
+
 }
 
 static void dynamicrrt_reshape(Display *dpy, Window window, void *closure, unsigned int w, unsigned int h)
