@@ -39,11 +39,6 @@ typedef struct {
   float v_y;
 } Obstacle;
 
-typedef struct {
-  Point pos;
-  float speed;
-} Robot;
-
 typedef struct Item {
   void* val;
   struct Item* next;
@@ -95,13 +90,14 @@ struct state {
   float robot_speed;
 
   Obstacle* obstacles;
-  Robot robot;
-  Point start, goal;
+  Point robot;
+  Point goal;
 
   List trees;
   Tree *current_tree;
   int nbtrees;
   int max_trees;
+  int max_steps;
 
   List path;
   Node *goal_node;
@@ -290,28 +286,28 @@ static float vector_norm(Point p)
   return vector_dot(p, p);
 }
 
+static Point vector(Point p1, Point p2)
+{
+  Point vect;
+  vect.x = p2.x - p1.x;
+  vect.y = p2.y - p1.x;
+  return vect;
+}
+
+static float points_distance(Point p1, Point p2)
+{
+  return vector_norm(vector(p1, p2));
+}
+
 static bool point_inside_circle(Point c_center, int radius, Point p)
 {
-  Point v_cp;
-
-  // vect(c, p)
-  v_cp.x = p.x - c_center.x;
-  v_cp.y = p.y - c_center.y;
-
-  return vector_norm(v_cp) < radius * radius;
+  return points_distance(c_center, p) < radius * radius;
 }
 
 static bool circle_line_collision(Point c_center, int radius, Point line_p1, Point line_p2)
 {
-  Point v_p1p2, v_p1c;
-
-  // vect(p1, p2)
-  v_p1p2.x = line_p2.x - line_p1.x;
-  v_p1p2.y = line_p2.y - line_p1.y;
-
-  // vect(p1, c)
-  v_p1c.x = c_center.x - line_p1.x;
-  v_p1c.y = c_center.y - line_p1.y;
+  Point v_p1p2 = vector(line_p1, line_p2);
+  Point v_p1c = vector(line_p1, c_center);
 
   // Check that the projection of c on vect(p1, p2) is between p1 and p2
   float p1p2 = vector_norm(v_p1p2);
@@ -328,14 +324,6 @@ static bool circle_line_collision(Point c_center, int radius, Point line_p1, Poi
   return fabs(vector_cross(v_p1p2, v_p1c)) < radius * sqrt(p1p2);
 }
 
-static float points_distance(Point p1, Point p2)
-{
-  Point vect;
-  vect.x = p2.x - p1.x;
-  vect.y = p2.y - p1.y;
-  return vector_norm(vect);
-}
-
 static bool line_obstacles_collision(Obstacle *obstacles, int nbobstacles, Point pos1, Point pos2)
 {
   int i_obstacle;
@@ -349,6 +337,14 @@ static bool line_obstacles_collision(Obstacle *obstacles, int nbobstacles, Point
 
   return false;
 }
+
+/*
+ * ----------------------------------------
+ *  DRAW
+ * ----------------------------------------
+ */
+
+
 
 /*
  * ----------------------------------------
@@ -478,6 +474,12 @@ static void rrt_prune(struct state *st)
           list_insert(&new_tree->nodes, extracted_node);
           ++new_tree->size;
 
+          // The tree containing the path is the current tree
+          if (path_node && path_node == extracted_node) {
+            st->current_tree = new_tree;
+            path_node = NULL;
+          }
+
           // Go through the neighbors not already visited and add them to the new tree
           for (i_node1 = extracted_node->neighbors; i_node1 != NULL; i_node1 = i_node1->next) {
             node1 = i_node1->val;
@@ -485,12 +487,6 @@ static void rrt_prune(struct state *st)
               list_remove(&tree->nodes, node1);
               node1->marked = true;
               list_insert(&visited_nodes, node1);
-
-              // The tree containing the path is the current tree
-              if (path_node) {
-                st->current_tree = new_tree;
-                path_node = NULL;
-              }
             }
           }
         }
@@ -512,7 +508,7 @@ static void rrt_prune(struct state *st)
 static Node* rrt_nearest_neighbor(Tree *tree, Point pos, float *distance)
 {
   Item *i_node;
-  Node *node, *nearest_node;
+  Node *node, *nearest_node = NULL;
   float dist, min_dist = -1.0;
 
   for (i_node = tree->nodes; i_node != NULL; i_node = i_node->next) {
@@ -537,7 +533,8 @@ static bool rrt_extend_trees(struct state *st)
   if (action < GOAL_ACTION) {
     // Try to connect to the goal
     Node *nearest_node = rrt_nearest_neighbor(st->current_tree, st->goal, NULL);
-    if (!line_obstacles_collision(st->obstacles, st->nbobstacles, nearest_node->pos, st->goal)) {
+    if (nearest_node && !line_obstacles_collision(st->obstacles, st->nbobstacles, nearest_node->pos, st->goal)) {
+      // Keep track of the tree containing the goal node
       st->goal_node = tree_connect_point(st->current_tree, nearest_node, st->goal);
       return true;
     }
@@ -602,7 +599,7 @@ static void rrt_compute_path(struct state *st)
 
   // Find the nearest tree to the robot
   for (i_tree = st->trees; i_tree != NULL; i_tree = i_tree->next) {
-    node = rrt_nearest_neighbor(i_tree->val, st->robot.pos, &dist);
+    node = rrt_nearest_neighbor(i_tree->val, st->robot, &dist);
     if (dist < min_dist || min_dist < 0.0) {
       min_dist = dist;
       start_node = node;
@@ -611,15 +608,16 @@ static void rrt_compute_path(struct state *st)
   }
 
   // Compute the current tree by trying to connect the robot to the nearest tree
-  if (!line_obstacles_collision(st->obstacles, st->nbobstacles, start_node->pos, st->robot.pos)) {
+  if (!line_obstacles_collision(st->obstacles, st->nbobstacles, start_node->pos, st->robot)) {
     st->current_tree = tree;
-    start_node = tree_connect_point(tree, start_node, st->robot.pos);
+    tree_connect_point(tree, start_node, st->robot);
   } else {
     st->current_tree = malloc(sizeof(Tree));
-    st->current_tree->size = 1;
-    start_node = tree_connect_point(st->current_tree, NULL, st->robot.pos);
+    st->current_tree->size = 0;
+    tree_connect_point(st->current_tree, NULL, st->robot);
     list_insert(&st->trees, st->current_tree);
     ++st->nbtrees;
+    return;
   }
 
   // There is no way to the goal, don't look for a path
@@ -679,6 +677,30 @@ static void rrt_compute_path(struct state *st)
   }
 }
 
+static void rrt_update(struct state *st)
+{
+  float dist, remaining_dist = st->robot_speed * st->delay;
+  Node *node;
+
+  if (!st->path)
+    return;
+
+  while (remaining_dist > 0 && st->path != NULL) {
+    node = list_pop(&st->path);
+    dist = points_distance(st->robot, node->pos);
+    if (dist > remaining_dist) {
+      st->robot = node->pos;
+      remaining_dist -= dist;
+    } else {
+      Point new_pos = vector(st->robot, node->pos);
+      new_pos.x *= dist / remaining_dist;
+      new_pos.y *= dist / remaining_dist;
+      st->robot = new_pos;
+      remaining_dist = 0;
+    }
+  }
+}
+
 static void rrt_free(struct state *st)
 {
   list_delete(&st->path, NULL);
@@ -698,11 +720,9 @@ static void rrt_simulation_init(struct state *st)
     st->obstacles[i].v_y = frand(st->max_speed);
   }
 
-  st->robot.pos.x = 0;
-  st->robot.pos.y = 0;
+  st->robot.x = 0.0;
+  st->robot.y = 0.0;
 
-  st->start.x = 0;
-  st->start.y = 0;
   st->goal.x = st->mapWidth;
   st->goal.y = st->mapHeight;
 
@@ -745,12 +765,12 @@ static void * dynamicrrt_init(Display *dpy, Window win)
   if (st->robot_radius < 0)
     st->robot_radius = 1;
 
-  st->max_speed = get_float_resource(st->dpy, "max_speed", "Integer");
+  st->max_speed = get_float_resource(st->dpy, "max_speed", "Float");
 
   if (st->max_speed < 0.0)
     st->max_speed = 0.0;
 
-  st->robot_speed = get_float_resource(st->dpy, "robot_speed", "Integer");
+  st->robot_speed = get_float_resource(st->dpy, "robot_speed", "Float");
 
   if (st->robot_speed < 0.0)
     st->robot_speed = 0.0;
@@ -759,6 +779,11 @@ static void * dynamicrrt_init(Display *dpy, Window win)
 
   if (st->max_trees < 1)
     st->max_trees = 1;
+
+  st->max_steps = get_integer_resource(st->dpy, "max_steps", "Integer");
+
+  if (st->max_steps < 1)
+    st->max_steps = 1;
 
   st->dbuf = True;
 
@@ -800,12 +825,47 @@ static void * dynamicrrt_init(Display *dpy, Window win)
 
 static unsigned long dynamicrrt_draw(Display *dpy, Window window, void *closure)
 {
+  int step;
+  bool arrived = false;
   struct state *st = (struct state*) closure;
 
+  // Prune nodes for collision
+  rrt_prune(st);
+
+  // Compute a path
+  rrt_compute_path(st);
+
+  // No path, try to add nodes and connect trees
+  if (!st->path) {
+    for (step = 0; step < st->max_steps; ++step) {
+      // Try to compute a new path if we rreachedeached the goal
+      if (rrt_extend_trees(st)) {
+        rrt_compute_path(st);
+        break;
+      }
+    }
+  }
+
+  // If their is a path, update the position of the robot
+  if (st->path) {
+    rrt_update(st);
+    arrived = !st->path;
+  }
+
+  // Draw everything
+
+  // We arrived, reset the screen
+  if (arrived) {
+    rrt_free(st);
+    rrt_simulation_init(st);
+  }
+
+  return st->delay;
 }
 
 static void dynamicrrt_reshape(Display *dpy, Window window, void *closure, unsigned int w, unsigned int h)
 {
+
 }
 
 static Bool dynamicrrt_event (Display *dpy, Window window, void *closure, XEvent *event)
@@ -815,6 +875,7 @@ static Bool dynamicrrt_event (Display *dpy, Window window, void *closure, XEvent
 
 static void dynamicrrt_free(Display *dpy, Window window, void *closure)
 {
+  rrt_free(closure);
 }
 
 
@@ -839,6 +900,7 @@ static XrmOptionDescRec dynamicrrt_options [] = {
   { "-max-speed"      , ".max_speed"   , XrmoptionSepArg, 0 },
   { "-robot-speed"    , ".robot_speed" , XrmoptionSepArg, 0 },
   { "-max-trees"      , ".max_trees"   , XrmoptionSepArg, 0 },
+  { "-max-steos"      , ".max_steps"   , XrmoptionSepArg, 0 },
   { "-obstacles"      , ".obstacles"   , XrmoptionSepArg, 0 },
   { 0                 , 0              , 0              , 0 }
 };
