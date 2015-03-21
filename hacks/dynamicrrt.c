@@ -17,10 +17,11 @@
 #include "xdbe.h"
 #endif
 
-#define NB_COLORS         3
-#define COLOR_LINE        0
-#define COLOR_ROBOT       1
-#define COLOR_OBSTACLES   2
+#define NB_COLORS          4
+#define COLOR_LINES        0
+#define COLOR_OTHER_LINES  1
+#define COLOR_ROBOT        2
+#define COLOR_OBSTACLES    3
 
 #define OFFSET            20
 
@@ -34,9 +35,8 @@ typedef struct {
 
 typedef struct {
   Point pos;
+  Point v;
   float radius;
-  float v_x;
-  float v_y;
 } Obstacle;
 
 typedef struct Item {
@@ -72,7 +72,7 @@ struct state {
 
   long delay;              /* usecs to wait between updates. */
 
-  int scrWidth, scrHeight;
+  unsigned int scrWidth, scrHeight;
   int mapWidth, mapHeight;
   GC gcDraw, gcClear;
 
@@ -84,8 +84,8 @@ struct state {
   int nbcolors;
 
   int nbobstacles;
-  int obstacle_radius;
-  int robot_radius;
+  float obstacle_radius;
+  float robot_radius;
   float max_speed;
   float robot_speed;
 
@@ -299,12 +299,12 @@ static float points_distance(Point p1, Point p2)
   return vector_norm(vector(p1, p2));
 }
 
-static bool point_inside_circle(Point c_center, int radius, Point p)
+static bool point_inside_circle(Point c_center, float radius, Point p)
 {
   return points_distance(c_center, p) < radius * radius;
 }
 
-static bool circle_line_collision(Point c_center, int radius, Point line_p1, Point line_p2)
+static bool circle_line_collision(Point c_center, float radius, Point line_p1, Point line_p2)
 {
   Point v_p1p2 = vector(line_p1, line_p2);
   Point v_p1c = vector(line_p1, c_center);
@@ -337,14 +337,6 @@ static bool line_obstacles_collision(Obstacle *obstacles, int nbobstacles, Point
 
   return false;
 }
-
-/*
- * ----------------------------------------
- *  DRAW
- * ----------------------------------------
- */
-
-
 
 /*
  * ----------------------------------------
@@ -677,14 +669,31 @@ static void rrt_compute_path(struct state *st)
   }
 }
 
-static void rrt_update(struct state *st)
+static bool rrt_update(struct state *st)
 {
-  float dist, remaining_dist = st->robot_speed * st->delay;
+  int i;
+  Obstacle *obs;
   Node *node;
+  float dist, remaining_dist = st->robot_speed * st->delay;
 
+  // Move the obstacles
+  for (i = 0; i < st->nbobstacles; ++i) {
+    obs = &st->obstacles[i];
+    obs->pos.x += obs->v.x;
+    obs->pos.y += obs->v.y;
+
+    if (obs->pos.x > st->mapWidth || obs->pos.x < 0)
+      obs->v.x = -obs->v.x;
+
+    if (obs->pos.y > st->mapHeight || obs->pos.y < 0)
+      obs->v.y = -obs->v.y;
+  }
+
+  // No path, do not move the robot
   if (!st->path)
-    return;
+    return false;
 
+  // Move the robot along the path
   while (remaining_dist > 0 && st->path != NULL) {
     node = list_pop(&st->path);
     dist = points_distance(st->robot, node->pos);
@@ -699,6 +708,8 @@ static void rrt_update(struct state *st)
       remaining_dist = 0;
     }
   }
+
+  return !st->path;
 }
 
 static void rrt_free(struct state *st)
@@ -716,8 +727,8 @@ static void rrt_simulation_init(struct state *st)
   for (i = 0; i < st->nbobstacles; ++i) {
     st->obstacles[i].pos = rrt_random_point(st);
     st->obstacles[i].radius = st->obstacle_radius;
-    st->obstacles[i].v_x = frand(st->max_speed);
-    st->obstacles[i].v_y = frand(st->max_speed);
+    st->obstacles[i].v.x = frand(st->max_speed);
+    st->obstacles[i].v.y = frand(st->max_speed);
   }
 
   st->robot.x = 0.0;
@@ -812,11 +823,17 @@ static void * dynamicrrt_init(Display *dpy, Window win)
       st->bb = XCreatePixmap(st->dpy, st->window, st->scrWidth, st->scrHeight, wa.depth);
       st->b = st->ba;
     }
-  } else
+  } else {
     st->b = st->window;
+  }
 
-  if (st->ba) XFillRectangle(st->dpy, st->ba, st->gcClear, 0, 0, st->scrWidth, st->scrHeight);
-  if (st->bb) XFillRectangle(st->dpy, st->bb, st->gcClear, 0, 0, st->scrWidth, st->scrHeight);
+  if (st->ba)
+    XFillRectangle(st->dpy, st->ba, st->gcClear, 0, 0, st->scrWidth, st->scrHeight);
+
+  if (st->bb)
+    XFillRectangle(st->dpy, st->bb, st->gcClear, 0, 0, st->scrWidth, st->scrHeight);
+
+  XClearWindow(st->dpy, st->window);
 
   rrt_simulation_init(st);
 
@@ -825,7 +842,11 @@ static void * dynamicrrt_init(Display *dpy, Window win)
 
 static unsigned long dynamicrrt_draw(Display *dpy, Window window, void *closure)
 {
-  int step;
+  int i;
+  Obstacle *obs;
+  Tree *tree;
+  Node *node1, *node2;
+  Item *i_tree, *i_node1, *i_node2;
   bool arrived = false;
   struct state *st = (struct state*) closure;
 
@@ -837,7 +858,7 @@ static unsigned long dynamicrrt_draw(Display *dpy, Window window, void *closure)
 
   // No path, try to add nodes and connect trees
   if (!st->path) {
-    for (step = 0; step < st->max_steps; ++step) {
+    for (i = 0; i < st->max_steps; ++i) {
       // Try to compute a new path if we rreachedeached the goal
       if (rrt_extend_trees(st)) {
         rrt_compute_path(st);
@@ -847,12 +868,53 @@ static unsigned long dynamicrrt_draw(Display *dpy, Window window, void *closure)
   }
 
   // If their is a path, update the position of the robot
-  if (st->path) {
-    rrt_update(st);
-    arrived = !st->path;
+  arrived = rrt_update(st);
+
+  // -------------------------
+  // DRAWING
+  // -------------------------
+
+  // Clear everything
+  XFillRectangle (st->dpy, st->b, st->gcClear, 0, 0, st->scrWidth, st->scrHeight);
+
+  // Robot
+  XSetForeground(st->dpy, st->gcDraw, st->colors[COLOR_ROBOT].pixel);
+  XFillArc(st->dpy, st->window, st->gcDraw, st->robot.x + OFFSET, st->robot.y + OFFSET, st->robot_radius * 2, st->robot_radius * 2, 0, 360 * 64);
+
+  // Obstacle
+  XSetForeground(st->dpy, st->gcDraw, st->colors[COLOR_OBSTACLES].pixel);
+  for (i = 0; i < st->nbobstacles; ++i) {
+    obs = &st->obstacles[i];
+    XFillArc(st->dpy, st->window, st->gcDraw, obs->pos.x + OFFSET, obs->pos.y + OFFSET, obs->radius * 2, obs->radius * 2, 0, 360 * 64);
   }
 
-  // Draw everything
+  // Trees
+  for (i_tree = st->trees; i_tree != NULL; i_tree = i_tree->next) {
+    tree = i_tree->val;
+    XSetForeground(st->dpy, st->gcDraw, st->colors[tree == st->current_tree ? COLOR_LINES : COLOR_OTHER_LINES].pixel);
+    for (i_node1 = st->trees; i_node1 != NULL; i_node1 = i_node1->next) {
+      node1 = i_node1->val;
+      for (i_node2 = node1->neighbors; i_node2 != NULL; i_node2 = i_node2->next) {
+        node2 = i_node2->val;
+        XDrawLine(st->dpy, st->window, st->gcDraw, node1->pos.x, node1->pos.y, node2->pos.x, node2->pos.y);
+      }
+    }
+  }
+
+  // Swip buffers
+#ifdef HAVE_DOUBLE_BUFFER_EXTENSION
+  if (st->backb) {
+    XdbeSwapInfo info[1];
+    info[0].swap_window = st->window;
+    info[0].swap_action = XdbeUndefined;
+    XdbeSwapBuffers(st->dpy, info, 1);
+  }
+  else
+#endif
+    if (st->dbuf)	{
+      XCopyArea(st->dpy, st->b, st->window, st->gcClear, 0, 0, st->scrWidth, st->scrHeight, 0, 0);
+      st->b = (st->b == st->ba ? st->bb : st->ba);
+    }
 
   // We arrived, reset the screen
   if (arrived) {
@@ -865,7 +927,16 @@ static unsigned long dynamicrrt_draw(Display *dpy, Window window, void *closure)
 
 static void dynamicrrt_reshape(Display *dpy, Window window, void *closure, unsigned int w, unsigned int h)
 {
+  struct state *st = (struct state *) closure;
 
+  if(w != st->scrWidth || h != st->scrHeight) {
+    st->scrWidth = w;
+    st->scrHeight = h;
+    st->mapWidth = w - 2 * OFFSET;
+    st->mapHeight = h - 2 * OFFSET;
+    rrt_free(st);
+    rrt_simulation_init(st);
+  } 
 }
 
 static Bool dynamicrrt_event (Display *dpy, Window window, void *closure, XEvent *event)
