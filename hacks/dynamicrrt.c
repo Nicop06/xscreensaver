@@ -63,6 +63,7 @@ typedef struct {
 struct state {
   Display *dpy;
   Window window;
+  XWindowAttributes wa;
 
   Pixmap b, ba, bb;
 
@@ -757,19 +758,25 @@ static void rrt_simulation_init(struct state *st)
   st->goal_tree = NULL;
 }
 
-static void * dynamicrrt_init(Display *dpy, Window win)
+static void rrt_restart(struct state *st)
+{
+  rrt_free(st);
+  rrt_simulation_init(st);
+  make_random_colormap(st->wa.screen, st->wa.visual, st->wa.colormap, st->colors, &st->nbcolors, True, True, 0, True);
+}
+
+static void* dynamicrrt_init(Display *dpy, Window win)
 {
   struct state *st = (struct state *) calloc(1, sizeof(*st));
-  XWindowAttributes wa;
 
   st->dpy = dpy;
   st->window = win;
 
-  XGetWindowAttributes(st->dpy, st->window, &wa);
+  XGetWindowAttributes(st->dpy, st->window, &st->wa);
 
   st->nbcolors = NB_COLORS;
   st->colors = (XColor *) malloc(sizeof(*st->colors) * (st->nbcolors+1));
-  make_random_colormap(wa.screen, wa.visual, wa.colormap, st->colors, &st->nbcolors, True, True, 0, True);
+  make_random_colormap(st->wa.screen, st->wa.visual, st->wa.colormap, st->colors, &st->nbcolors, True, True, 0, True);
 
   st->delay = get_integer_resource(st->dpy, "delay", "Integer");
 
@@ -793,19 +800,19 @@ static void * dynamicrrt_init(Display *dpy, Window win)
   st->b = st->backb = xdbe_get_backbuffer(st->dpy, st->window, XdbeUndefined);
 #endif
 
-  st->scrWidth = wa.width;
-  st->scrHeight = wa.height;
-  st->mapWidth = wa.width - 2 * OFFSET;
-  st->mapHeight = wa.height - 2 * OFFSET;
-  st->cmap = wa.colormap;
+  st->scrWidth = st->wa.width;
+  st->scrHeight = st->wa.height;
+  st->mapWidth = st->wa.width - 2 * OFFSET;
+  st->mapHeight = st->wa.height - 2 * OFFSET;
+  st->cmap = st->wa.colormap;
   st->gcDraw = XCreateGC(st->dpy, st->window, 0, &st->gcv);
   st->gcv.foreground = get_pixel_resource(st->dpy, st->cmap, "background", "Background");
   st->gcClear = XCreateGC(st->dpy, st->window, GCForeground, &st->gcv);
 
   if (st->dbuf) {
     if (!st->b) {
-      st->ba = XCreatePixmap(st->dpy, st->window, st->scrWidth, st->scrHeight, wa.depth);
-      st->bb = XCreatePixmap(st->dpy, st->window, st->scrWidth, st->scrHeight, wa.depth);
+      st->ba = XCreatePixmap(st->dpy, st->window, st->scrWidth, st->scrHeight, st->wa.depth);
+      st->bb = XCreatePixmap(st->dpy, st->window, st->scrWidth, st->scrHeight, st->wa.depth);
       st->b = st->ba;
     }
   } else {
@@ -923,8 +930,7 @@ static void dynamicrrt_reshape(Display *dpy, Window window, void *closure, unsig
     st->scrHeight = h;
     st->mapWidth = w - 2 * OFFSET;
     st->mapHeight = h - 2 * OFFSET;
-    rrt_free(st);
-    rrt_simulation_init(st);
+    rrt_restart(st);
   } 
 }
 
@@ -935,8 +941,10 @@ static Bool dynamicrrt_event (Display *dpy, Window window, void *closure, XEvent
 
 static void dynamicrrt_free(Display *dpy, Window window, void *closure)
 {
-  rrt_free(closure);
-  free(closure);
+  struct state *st = (struct state *) closure;
+  rrt_free(st);
+  free(st->colors);
+  free(st);
 }
 
 
