@@ -603,7 +603,7 @@ static void rrt_compute_path(struct state *st)
   }
 
   /* Compute the current tree by trying to connect the robot to the nearest tree */
-  if (tree && !line_obstacles_collision(st->obstacles, st->nbobstacles, start_node->pos, st->robot)) {
+  if (tree && start_node && !line_obstacles_collision(st->obstacles, st->nbobstacles, start_node->pos, st->robot)) {
     st->current_tree = tree;
     tree_connect_point(tree, start_node, st->robot);
   } else {
@@ -762,7 +762,6 @@ static void rrt_restart(struct state *st)
 {
   rrt_free(st);
   rrt_simulation_init(st);
-  make_random_colormap(st->wa.screen, st->wa.visual, st->wa.colormap, st->colors, &st->nbcolors, True, True, 0, True);
 }
 
 static void* dynamicrrt_init(Display *dpy, Window win)
