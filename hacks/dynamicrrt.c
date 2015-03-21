@@ -23,7 +23,7 @@
 #define COLOR_ROBOT        2
 #define COLOR_OBSTACLES    3
 
-#define OFFSET            20
+#define OFFSET            50
 
 #define GOAL_ACTION      0.4
 #define CONNECT_ACTION   0.4
@@ -101,6 +101,7 @@ struct state {
 
   List path;
   Node *goal_node;
+  Tree *goal_tree;
 };
 
 /*
@@ -328,8 +329,8 @@ static bool line_obstacles_collision(Obstacle *obstacles, int nbobstacles, Point
 static Point rrt_random_point(struct state *st)
 {
   Point pos;
-  pos.x = random() % st->scrWidth;
-  pos.y = random() % st->scrHeight;
+  pos.x = random() % st->mapWidth;
+  pos.y = random() % st->mapHeight;
   return pos;
 }
 
@@ -346,6 +347,10 @@ static void rrt_insert_tree(struct state *st, Tree *new_tree)
       break;
   }
 
+  if (list_search(new_tree->nodes, st->goal_node)) {
+    st->goal_tree = new_tree;
+  }
+
   list_insert_after(&st->trees, prev_i_tree, new_tree);
 
   /* Remove the smallest tree if the list is too big */
@@ -354,8 +359,14 @@ static void rrt_insert_tree(struct state *st, Tree *new_tree)
     --st->nbtrees;
 
     /* Do not delete the current tree (holding the path) */
-    if (tree != st->current_tree && tree != NULL)
+    if (tree != st->current_tree && tree != NULL) {
+      /* The tree containing the goal has been removed */
+      if (tree == st->goal_tree) {
+        st->goal_tree = NULL;
+        st->goal_node = NULL;
+      }
       tree_delete(tree);
+    }
   }
 }
 
@@ -511,6 +522,7 @@ static bool rrt_extend_trees(struct state *st)
     if (nearest_node && !line_obstacles_collision(st->obstacles, st->nbobstacles, nearest_node->pos, st->goal)) {
       /* Keep track of the tree containing the goal node */
       st->goal_node = tree_connect_point(st->current_tree, nearest_node, st->goal);
+      st->goal_tree = st->current_tree;
       return true;
     }
   } else if (action < CONNECT_ACTION && st->nbtrees > 1) {
@@ -547,8 +559,14 @@ static bool rrt_extend_trees(struct state *st)
       list_concatenate(&st->current_tree->nodes, tree->nodes);
       st->current_tree->size += tree->size;
       --st->nbtrees;
+
+      /* The tree containing the goal changed */
+      if (tree == st->goal_tree)
+        st->goal_tree = st->current_tree;
+
       free(tree);
-      if (list_search(st->current_tree->nodes, st->goal_node))
+
+      if (st->current_tree == st->goal_tree)
         return true;
     }
   } else {
@@ -598,7 +616,7 @@ static void rrt_compute_path(struct state *st)
   }
 
   /*  There is no way to the goal, don't look for a path */
-  if (!list_search(st->current_tree->nodes, st->goal_node))
+  if (st->goal_tree != st->current_tree)
     return;
 
   /*
@@ -673,10 +691,10 @@ static bool rrt_update(struct state *st)
     obs->pos.x += obs->v.x;
     obs->pos.y += obs->v.y;
 
-    if (obs->pos.x > st->mapWidth || obs->pos.x < 0)
+    if ((obs->pos.x > st->mapWidth && obs->v.x > 0) || (obs->pos.x < 0 && obs->v.x < 0))
       obs->v.x = -obs->v.x;
 
-    if (obs->pos.y > st->mapHeight || obs->pos.y < 0)
+    if ((obs->pos.y > st->mapHeight && obs->v.y > 0) || (obs->pos.y < 0 && obs->v.y < 0))
       obs->v.y = -obs->v.y;
   }
 
@@ -718,8 +736,10 @@ static void rrt_simulation_init(struct state *st)
   for (i = 0; i < st->nbobstacles; ++i) {
     st->obstacles[i].pos = rrt_random_point(st);
     st->obstacles[i].radius = st->obstacle_radius;
-    st->obstacles[i].v.x = frand(st->max_speed);
-    st->obstacles[i].v.y = frand(st->max_speed);
+    do {
+      st->obstacles[i].v.x = frand(st->max_speed * 2) - st->max_speed;
+      st->obstacles[i].v.y = frand(st->max_speed * 2) - st->max_speed;
+    } while (vector_norm(st->obstacles[i].v) < st->max_speed * st->max_speed / 2);
   }
 
   st->robot.x = 0.0;
@@ -734,6 +754,7 @@ static void rrt_simulation_init(struct state *st)
 
   st->path = NULL;
   st->goal_node = NULL;
+  st->goal_tree = NULL;
 }
 
 static void * dynamicrrt_init(Display *dpy, Window win)
@@ -897,7 +918,7 @@ static void dynamicrrt_reshape(Display *dpy, Window window, void *closure, unsig
 {
   struct state *st = (struct state *) closure;
 
-  if(w != st->scrWidth || h != st->scrHeight) {
+  if (w != st->scrWidth || h != st->scrHeight) {
     st->scrWidth = w;
     st->scrHeight = h;
     st->mapWidth = w - 2 * OFFSET;
