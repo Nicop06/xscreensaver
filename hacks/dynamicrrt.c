@@ -113,7 +113,7 @@ static Item* list_insert_after(List *list, Item *prev_item, void* val)
 {
   Item *item = malloc(sizeof(Item));
   item->val = val;
-  item->previous = item;
+  item->previous = prev_item;
 
   if (prev_item) {
     item->next = prev_item->next;
@@ -214,14 +214,6 @@ static void list_concatenate(List *list1, List list2)
  */
 
 
-static void tree_remove_edge(Node *node1, Node *node2)
-{
-  if (node1 && node2) {
-    list_remove(&node1->neighbors, node2);
-    list_remove(&node2->neighbors, node1);
-  }
-}
-
 static void node_delete(void *node)
 {
   if (node) {
@@ -240,6 +232,7 @@ static Node* tree_connect_point(Tree *tree, Node *tree_node, Point pos)
 {
   Node *new_node = malloc(sizeof(Node));
   new_node->pos = pos;
+  new_node->neighbors = NULL;
 
   if (tree_node) {
     list_insert(&new_node->neighbors, tree_node);
@@ -259,12 +252,12 @@ static Node* tree_connect_point(Tree *tree, Node *tree_node, Point pos)
 
 static float vector_cross(Point p1, Point p2)
 {
-  return p1.x * p2.y - p1.y + p2.x;
+  return p1.x * p2.y - p1.y * p2.x;
 }
 
 static float vector_dot(Point p1, Point p2)
 {
-  return p1.x * p2.x + p1.y + p2.y;
+  return p1.x * p2.x + p1.y * p2.y;
 }
 
 static float vector_norm(Point p)
@@ -276,7 +269,7 @@ static Point vector(Point p1, Point p2)
 {
   Point vect;
   vect.x = p2.x - p1.x;
-  vect.y = p2.y - p1.x;
+  vect.y = p2.y - p1.y;
   return vect;
 }
 
@@ -353,7 +346,7 @@ static void rrt_insert_tree(struct state *st, Tree *new_tree)
       break;
   }
 
-  list_insert_after(&st->trees, prev_i_tree, tree);
+  list_insert_after(&st->trees, prev_i_tree, new_tree);
 
   /* Remove the smallest tree if the list is too big */
   if (++st->nbtrees > st->max_trees) {
@@ -389,13 +382,13 @@ static void rrt_check_path(struct state *st)
 static void rrt_prune(struct state *st)
 {
   Tree *tree;
-  List old_trees;
   Tree *new_tree;
   Item *i_node1, *i_node2;
   Node *node1, *node2;
   bool rebuild_tree = false;
 
-  old_trees = st->trees;
+  List old_trees = st->trees;
+
   st->trees = NULL;
   st->nbtrees = 0;
 
@@ -403,24 +396,27 @@ static void rrt_prune(struct state *st)
   while (old_trees != NULL) {
     tree = list_pop(&old_trees);
 
-    for (i_node1 = tree->nodes; i_node1 != NULL; ) {
+    rebuild_tree = false;
+
+    for (i_node1 = tree->nodes; i_node1 != NULL; i_node1 = i_node1->next) {
       node1 = i_node1->val;
 
-      rebuild_tree = false;
-
       /* Delete nodes in collision */
-      for (i_node2 = node1->neighbors; i_node2 != NULL; i_node2 = i_node2->next) {
+      i_node2 = node1->neighbors;
+      while (i_node2 != NULL) {
         node2 = i_node2->val;
+        i_node2 = i_node2->next;
         if (line_obstacles_collision(st->obstacles, st->nbobstacles, node1->pos, node2->pos)) {
           rebuild_tree = true;
-          tree_remove_edge(node1, node2);
+          list_remove(&node1->neighbors, node2);
+          list_remove(&node2->neighbors, node1);
         }
       }
     }
 
     /* Rebuild trees if cut */
     if (rebuild_tree) {
-      List visited_nodes;
+      List visited_nodes = NULL;
       Node *extracted_node, *path_node = NULL;
 
       /* Check if the path if connected and nullify it if not */
@@ -441,6 +437,7 @@ static void rrt_prune(struct state *st)
       while (tree->nodes != NULL) {
         new_tree = malloc(sizeof(Tree));
         new_tree->size = 0;
+        new_tree->nodes = NULL;
 
         node1 = list_pop(&tree->nodes);
         node1->marked = true;
@@ -477,7 +474,7 @@ static void rrt_prune(struct state *st)
     }
   }
 
-  if (st->current_tree) {
+  if (st->current_tree && !list_search(st->trees, st->current_tree)) {
     list_insert(&st->trees, st->current_tree);
     ++st->nbtrees;
   }
@@ -557,7 +554,8 @@ static bool rrt_extend_trees(struct state *st)
   } else {
     Point new_pos = rrt_random_point(st);
     Node *nearest_node = rrt_nearest_neighbor(st->current_tree, new_pos, NULL);
-    tree_connect_point(st->current_tree, nearest_node, new_pos);
+    if (nearest_node && !line_obstacles_collision(st->obstacles, st->nbobstacles, nearest_node->pos, new_pos))
+      tree_connect_point(st->current_tree, nearest_node, new_pos);
   }
 
   return false;
@@ -566,10 +564,10 @@ static bool rrt_extend_trees(struct state *st)
 static void rrt_compute_path(struct state *st)
 {
   Item *i_node, *i_next_node = NULL, *i_tree;
-  Node *node, *start_node = NULL, *cur_node;
+  Node *node, *start_node = NULL, *cur_node = NULL;
   Tree *tree = NULL;
   float dist, min_dist = -1.0;
-  List opened_nodes;
+  List opened_nodes = NULL;
 
   /* We already have a valid path */
   if (st->path)
@@ -592,6 +590,7 @@ static void rrt_compute_path(struct state *st)
   } else {
     st->current_tree = malloc(sizeof(Tree));
     st->current_tree->size = 0;
+    st->current_tree->nodes = NULL;
     tree_connect_point(st->current_tree, NULL, st->robot);
     list_insert(&st->trees, st->current_tree);
     ++st->nbtrees;
@@ -620,7 +619,6 @@ static void rrt_compute_path(struct state *st)
   /*
    * STEP 2: Algorithm
    */
-  cur_node = NULL;
   while (node != st->goal_node && opened_nodes != NULL) {
     min_dist = -1.0;
     for (i_node = opened_nodes; i_node != NULL; i_node = i_node->next) {
@@ -667,7 +665,7 @@ static bool rrt_update(struct state *st)
   int i;
   Obstacle *obs;
   Node *node;
-  float dist, remaining_dist = st->robot_speed * st->delay;
+  float dist, remaining_dist = st->robot_speed;
 
   /* Move the obstacles */
   for (i = 0; i < st->nbobstacles; ++i) {
@@ -689,15 +687,15 @@ static bool rrt_update(struct state *st)
   /* Move the robot along the path */
   while (remaining_dist > 0 && st->path != NULL) {
     node = list_pop(&st->path);
-    dist = points_distance(st->robot, node->pos);
-    if (dist > remaining_dist) {
+    dist = sqrt(points_distance(st->robot, node->pos));
+    if (dist < remaining_dist) {
       st->robot = node->pos;
       remaining_dist -= dist;
     } else {
       Point new_pos = vector(st->robot, node->pos);
-      new_pos.x *= dist / remaining_dist;
-      new_pos.y *= dist / remaining_dist;
-      st->robot = new_pos;
+      st->robot.x += new_pos.x * remaining_dist / dist;
+      st->robot.y += new_pos.y * remaining_dist / dist;
+      list_insert(&st->path, node);
       remaining_dist = 0;
     }
   }
@@ -740,7 +738,7 @@ static void rrt_simulation_init(struct state *st)
 
 static void * dynamicrrt_init(Display *dpy, Window win)
 {
-  struct state *st = (struct state *) calloc (1, sizeof(*st));
+  struct state *st = (struct state *) calloc(1, sizeof(*st));
   XWindowAttributes wa;
 
   st->dpy = dpy;
@@ -750,44 +748,17 @@ static void * dynamicrrt_init(Display *dpy, Window win)
 
   st->nbcolors = NB_COLORS;
   st->colors = (XColor *) malloc(sizeof(*st->colors) * (st->nbcolors+1));
-  make_random_colormap (wa.screen, wa.visual, wa.colormap, st->colors, &st->nbcolors, True, True, 0, True);
+  make_random_colormap(wa.screen, wa.visual, wa.colormap, st->colors, &st->nbcolors, True, True, 0, True);
 
   st->delay = get_integer_resource(st->dpy, "delay", "Integer");
 
   st->nbobstacles = get_integer_resource(st->dpy, "obstacles", "Integer");
-
-  if(st->nbobstacles < 0)
-    st->nbobstacles = 0;
-
-  st->obstacle_radius = get_integer_resource(st->dpy, "obstacle_radius", "Integer");
-
-  if (st->obstacle_radius < 0)
-    st->obstacle_radius = 1;
-
-  st->robot_radius = get_integer_resource(st->dpy, "robot_radius", "Integer");
-
-  if (st->robot_radius < 0)
-    st->robot_radius = 1;
-
-  st->max_speed = get_float_resource(st->dpy, "max_speed", "Float");
-
-  if (st->max_speed < 0.0)
-    st->max_speed = 0.0;
-
-  st->robot_speed = get_float_resource(st->dpy, "robot_speed", "Float");
-
-  if (st->robot_speed < 0.0)
-    st->robot_speed = 0.0;
-
-  st->max_trees = get_integer_resource(st->dpy, "max_trees", "Integer");
-
-  if (st->max_trees < 1)
-    st->max_trees = 1;
-
-  st->max_steps = get_integer_resource(st->dpy, "max_steps", "Integer");
-
-  if (st->max_steps < 1)
-    st->max_steps = 1;
+  st->obstacle_radius = get_float_resource(st->dpy, "obstacleradius", "Float");
+  st->robot_radius = get_float_resource(st->dpy, "robotradius", "Float");
+  st->max_speed = get_float_resource(st->dpy, "maxspeed", "Float");
+  st->robot_speed = get_float_resource(st->dpy, "robotspeed", "Float");
+  st->max_trees = get_integer_resource(st->dpy, "maxtrees", "Integer");
+  st->max_steps = get_integer_resource(st->dpy, "maxsteps", "Integer");
 
   st->dbuf = True;
 
@@ -870,30 +841,32 @@ static unsigned long dynamicrrt_draw(Display *dpy, Window window, void *closure)
    */
 
   /* Clear everything */
-  XFillRectangle (st->dpy, st->b, st->gcClear, 0, 0, st->scrWidth, st->scrHeight);
-
-  /* Robot */
-  XSetForeground(st->dpy, st->gcDraw, st->colors[COLOR_ROBOT].pixel);
-  XFillArc(st->dpy, st->window, st->gcDraw, st->robot.x + OFFSET, st->robot.y + OFFSET, st->robot_radius * 2, st->robot_radius * 2, 0, 360 * 64);
-
-  /* Obstacle */
-  XSetForeground(st->dpy, st->gcDraw, st->colors[COLOR_OBSTACLES].pixel);
-  for (i = 0; i < st->nbobstacles; ++i) {
-    obs = &st->obstacles[i];
-    XFillArc(st->dpy, st->window, st->gcDraw, obs->pos.x + OFFSET, obs->pos.y + OFFSET, obs->radius * 2, obs->radius * 2, 0, 360 * 64);
-  }
+  XFillRectangle(st->dpy, st->b, st->gcClear, 0, 0, st->scrWidth, st->scrHeight);
 
   /* Trees */
   for (i_tree = st->trees; i_tree != NULL; i_tree = i_tree->next) {
     tree = i_tree->val;
     XSetForeground(st->dpy, st->gcDraw, st->colors[tree == st->current_tree ? COLOR_LINES : COLOR_OTHER_LINES].pixel);
-    for (i_node1 = st->trees; i_node1 != NULL; i_node1 = i_node1->next) {
+    for (i_node1 = tree->nodes; i_node1 != NULL; i_node1 = i_node1->next) {
       node1 = i_node1->val;
       for (i_node2 = node1->neighbors; i_node2 != NULL; i_node2 = i_node2->next) {
         node2 = i_node2->val;
-        XDrawLine(st->dpy, st->window, st->gcDraw, node1->pos.x, node1->pos.y, node2->pos.x, node2->pos.y);
+        XDrawLine(st->dpy, st->b, st->gcDraw, node1->pos.x + OFFSET, node1->pos.y + OFFSET, node2->pos.x + OFFSET, node2->pos.y + OFFSET);
       }
     }
+  }
+
+  /* Robot */
+  XSetForeground(st->dpy, st->gcDraw, st->colors[COLOR_ROBOT].pixel);
+  XFillArc(st->dpy, st->b, st->gcDraw, st->robot.x - st->robot_radius + OFFSET, st->robot.y - st->robot_radius + OFFSET,
+      st->robot_radius * 2, st->robot_radius * 2, 0, 360 * 64);
+
+  /* Obstacle */
+  XSetForeground(st->dpy, st->gcDraw, st->colors[COLOR_OBSTACLES].pixel);
+  for (i = 0; i < st->nbobstacles; ++i) {
+    obs = &st->obstacles[i];
+    XFillArc(st->dpy, st->b, st->gcDraw, obs->pos.x - obs->radius + OFFSET, obs->pos.y - obs->radius + OFFSET,
+        obs->radius * 2, obs->radius * 2, 0, 360 * 64);
   }
 
   /* Swip buffers */
@@ -942,6 +915,7 @@ static Bool dynamicrrt_event (Display *dpy, Window window, void *closure, XEvent
 static void dynamicrrt_free(Display *dpy, Window window, void *closure)
 {
   rrt_free(closure);
+  free(closure);
 }
 
 
@@ -949,8 +923,12 @@ static void dynamicrrt_free(Display *dpy, Window window, void *closure)
 
 static const char *dynamicrrt_defaults [] = {
   ".background: black",
-  "*obstacle-radius: 40",
-  "*robot-radius: 10",
+  "*obstacleradius: 40",
+  "*robotradius: 10",
+  "*maxspeed: 3.0",
+  "*robotspeed: 3.0",
+  "*maxtrees: 5",
+  "*maxsteps: 10",
   "*delay: 20000",
   "*obstacles: 3",
 #ifdef HAVE_DOUBLE_BUFFER_EXTENSION
@@ -960,15 +938,15 @@ static const char *dynamicrrt_defaults [] = {
 };
 
 static XrmOptionDescRec dynamicrrt_options [] = {
-  { "-delay"          , ".delay"       , XrmoptionSepArg, 0 },
-  { "-obstacle_radius", ".radius"      , XrmoptionSepArg, 0 },
-  { "-robot-radius"   , ".robot_radius", XrmoptionSepArg, 0 },
-  { "-max-speed"      , ".max_speed"   , XrmoptionSepArg, 0 },
-  { "-robot-speed"    , ".robot_speed" , XrmoptionSepArg, 0 },
-  { "-max-trees"      , ".max_trees"   , XrmoptionSepArg, 0 },
-  { "-max-steos"      , ".max_steps"   , XrmoptionSepArg, 0 },
-  { "-obstacles"      , ".obstacles"   , XrmoptionSepArg, 0 },
-  { 0                 , 0              , 0              , 0 }
+  { "-delay"         , ".delay"         , XrmoptionSepArg, 0 },
+  { "-obstacleradius", ".obstacleradius", XrmoptionSepArg, 0 },
+  { "-robotradius"   , ".robotradius"   , XrmoptionSepArg, 0 },
+  { "-maxspeed"      , ".maxspeed"      , XrmoptionSepArg, 0 },
+  { "-robotspeed"    , ".robotspeed"    , XrmoptionSepArg, 0 },
+  { "-maxtrees"      , ".maxtrees"      , XrmoptionSepArg, 0 },
+  { "-maxsteps"      , ".maxsteps"      , XrmoptionSepArg, 0 },
+  { "-obstacles"     , ".obstacles"     , XrmoptionSepArg, 0 },
+  { 0                , 0                , 0              , 0 }
 };
 
 
