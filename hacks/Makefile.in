@@ -113,7 +113,7 @@ SRCS		= attraction.c blitspin.c bouboule.c braid.c bubbles.c \
 		  fuzzyflakes.c anemotaxis.c memscroller.c substrate.c \
 		  intermomentary.c fireworkx.c fiberlamp.c \
 		  boxfit.c interaggregate.c celtic.c cwaves.c m6502.c \
-		  asm6502.c abstractile.c lcdscrub.c hexadrop.c \
+		  asm6502.c abstractile.c lcdscrub.c hexadrop.c dynamicrrt.c \
 		  webcollage-cocoa.m webcollage-helper-cocoa.m
 SCRIPTS		= vidwhacker webcollage ljlatest
 
@@ -151,7 +151,7 @@ OBJS		= attraction.o blitspin.o bouboule.o braid.o bubbles.o \
 		  pacman.o pacman_ai.o pacman_level.o \
 		  fuzzyflakes.o anemotaxis.o memscroller.o substrate.o \
 		  intermomentary.o fireworkx.o fiberlamp.o boxfit.o \
-		  interaggregate.o celtic.o cwaves.o webcollage-cocoa.o \
+		  interaggregate.o celtic.o cwaves.o webcollage-cocoa.o dynamicrrt.o \
 		  webcollage-helper-cocoa.o m6502.o asm6502.o abstractile.o \
 		  lcdscrub.o hexadrop.o
 
@@ -172,7 +172,7 @@ EXES		= attraction blitspin bouboule braid decayscreen deco \
 		  polyominoes thornbird  fluidballs anemone halftone \
 		  metaballs eruption popsquares barcode piecewise cloudlife \
 		  fontglide apple2 xanalogtv pong  wormhole \
-		  pacman fuzzyflakes anemotaxis memscroller substrate \
+		  pacman fuzzyflakes anemotaxis memscroller substrate dynamicrrt \
 		  intermomentary fireworkx fiberlamp boxfit interaggregate \
 		  celtic cwaves m6502 abstractile lcdscrub hexadrop \
 		  @JPEG_EXES@
@@ -226,7 +226,7 @@ MEN		= anemone.man apollonian.man attraction.man \
 		  anemotaxis.man memscroller.man substrate.man \
 		  intermomentary.man fireworkx.man fiberlamp.man boxfit.man \
 		  interaggregate.man celtic.man cwaves.man abstractile.man \
-		  lcdscrub.man hexadrop.man
+		  lcdscrub.man hexadrop.man dynamicrrt.man
 
 RETIRED_MEN	= ant.man bubbles.man critical.man flag.man forest.man \
 		  laser.man lightning.man lisa.man lissie.man lmorph.man \
@@ -825,6 +825,9 @@ celtic:		celtic.o	$(HACK_OBJS) $(COL) $(ERASE)
 
 cwaves:		cwaves.o	$(HACK_OBJS) $(COL)
 	$(CC_HACK) -o $@ $@.o	$(HACK_OBJS) $(COL) $(HACK_LIBS)
+
+dynamicrrt:	dynamicrrt.o	$(HACK_OBJS) $(COL) $(DBE)
+	$(CC_HACK) -o $@ $@.o	$(HACK_OBJS) $(COL) $(DBE) $(HACK_LIBS)
 
 m6502.h:
 	@echo "building m6502.h from $(srcdir)/images/m6502/*.asm"; \
@@ -1457,6 +1460,18 @@ drift.o: $(UTILS_SRC)/xshm.h
 drift.o: $(UTILS_SRC)/yarandom.h
 drift.o: $(srcdir)/xlockmoreI.h
 drift.o: $(srcdir)/xlockmore.h
+dynamicrrt.o: ../config.h
+dynamicrrt.o: $(srcdir)/fps.h
+dynamicrrt.o: $(srcdir)/screenhackI.h
+dynamicrrt.o: $(srcdir)/screenhack.h
+dynamicrrt.o: $(UTILS_SRC)/colors.h
+dynamicrrt.o: $(UTILS_SRC)/grabscreen.h
+dynamicrrt.o: $(UTILS_SRC)/hsv.h
+dynamicrrt.o: $(UTILS_SRC)/resources.h
+dynamicrrt.o: $(UTILS_SRC)/usleep.h
+dynamicrrt.o: $(UTILS_SRC)/visual.h
+dynamicrrt.o: $(UTILS_SRC)/xdbe.h
+dynamicrrt.o: $(UTILS_SRC)/yarandom.h
 epicycle.o: ../config.h
 epicycle.o: $(srcdir)/fps.h
 epicycle.o: $(srcdir)/screenhackI.h

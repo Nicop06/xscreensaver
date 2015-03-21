@@ -1,4 +1,4 @@
-/* dynamicrrt, Copyright (c) 2015 Nicolas Porcel
+/*  dynamicrrt, Copyright (c) 2015 Nicolas Porcel
  *
  * Permission to use, copy, modify, distribute, and sell this software
  * and its documentation for any purpose is hereby granted without
@@ -70,7 +70,7 @@ struct state {
   XdbeBackBuffer backb;
 #endif
 
-  long delay;              /* usecs to wait between updates. */
+  long delay;              /*  usecs to wait between updates.  */
 
   unsigned int scrWidth, scrHeight;
   int mapWidth, mapHeight;
@@ -213,20 +213,6 @@ static void list_concatenate(List *list1, List list2)
  * ----------------------------------------
  */
 
-static void tree_remove_node(Tree *tree, Item *i_node)
-{
-  Node *neighbor, *node = i_node->val;
-
-  for (i_node = node->neighbors; i_node != NULL; i_node = i_node->next) {
-    neighbor = i_node->val;
-    if (neighbor)
-      list_remove(&neighbor->neighbors, node);
-  }
-
-  list_remove(&tree->nodes, node);
-  free(node);
-  --tree->size;
-}
 
 static void tree_remove_edge(Node *node1, Node *node2)
 {
@@ -309,18 +295,20 @@ static bool circle_line_collision(Point c_center, float radius, Point line_p1, P
   Point v_p1p2 = vector(line_p1, line_p2);
   Point v_p1c = vector(line_p1, c_center);
 
-  // Check that the projection of c on vect(p1, p2) is between p1 and p2
+  /*  Check that the projection of c on vect(p1, p2) is between p1 and p2 */
   float p1p2 = vector_norm(v_p1p2);
   float p1c = vector_dot(v_p1p2, v_p1c);
 
   if (p1c < 0 || p1c > p1p2) {
-    // Check if any point of the line is inside the circle
+    /*  Check if any point of the line is inside the circle */
     return point_inside_circle(c_center, radius, line_p1)
            || point_inside_circle(c_center, radius, line_p2);
   }
 
-  // Check if the distance from the center of circle to vect(p1, p2) is
-  // less than the radius of the circle
+  /*
+   * Check if the distance from the center of circle to vect(p1, p2) is
+   * less than the radius of the circle
+   */
   return fabs(vector_cross(v_p1p2, v_p1c)) < radius * sqrt(p1p2);
 }
 
@@ -354,11 +342,11 @@ static Point rrt_random_point(struct state *st)
 
 static void rrt_insert_tree(struct state *st, Tree *new_tree)
 {
-  Tree *tree;
+  Tree *tree = NULL;
   Item *prev_i_tree = NULL;
   Item *i_tree;
 
-  // Insert the new tree such that the trees are sorted by size
+  /* Insert the new tree such that the trees are sorted by size */
   for (i_tree = st->trees; i_tree != NULL; prev_i_tree = i_tree, i_tree = i_tree->next) {
     tree = i_tree->val;
     if (new_tree->size > tree->size)
@@ -367,12 +355,12 @@ static void rrt_insert_tree(struct state *st, Tree *new_tree)
 
   list_insert_after(&st->trees, prev_i_tree, tree);
 
-  // Remove the smallest tree if the list is too big
+  /* Remove the smallest tree if the list is too big */
   if (++st->nbtrees > st->max_trees) {
     tree = list_pop(&st->trees);
     --st->nbtrees;
 
-    // Do not delete the current tree (holding the path)
+    /* Do not delete the current tree (holding the path) */
     if (tree != st->current_tree && tree != NULL)
       tree_delete(tree);
   }
@@ -386,11 +374,11 @@ static void rrt_check_path(struct state *st)
   if (!st->path)
     return;
 
-  // Check if path is conneted
+  /* Check if path is conneted */
   for (i_node = st->path; i_node != NULL; i_node = i_node->next) {
     node = i_node->val;
     if (!i_node->next || !list_search(node->neighbors, i_node->next->val)) {
-      // The path is broken, delete it and remove the current tree
+      /* The path is broken, delete it and remove the current tree */
       list_delete(&st->path, NULL);
       st->current_tree = NULL;
       return;
@@ -405,14 +393,13 @@ static void rrt_prune(struct state *st)
   Tree *new_tree;
   Item *i_node1, *i_node2;
   Node *node1, *node2;
-  bool rebuild_tree;
-  int tree_size;
+  bool rebuild_tree = false;
 
   old_trees = st->trees;
   st->trees = NULL;
   st->nbtrees = 0;
 
-  // Delete nodes and edges colliding with obstacles
+  /* Delete nodes and edges colliding with obstacles */
   while (old_trees != NULL) {
     tree = list_pop(&old_trees);
 
@@ -421,7 +408,7 @@ static void rrt_prune(struct state *st)
 
       rebuild_tree = false;
 
-      // Delete nodes in collision
+      /* Delete nodes in collision */
       for (i_node2 = node1->neighbors; i_node2 != NULL; i_node2 = i_node2->next) {
         node2 = i_node2->val;
         if (line_obstacles_collision(st->obstacles, st->nbobstacles, node1->pos, node2->pos)) {
@@ -431,22 +418,21 @@ static void rrt_prune(struct state *st)
       }
     }
 
-    // Rebuild trees if cut
-    tree_size = 0;
+    /* Rebuild trees if cut */
     if (rebuild_tree) {
       List visited_nodes;
       Node *extracted_node, *path_node = NULL;
 
-      // Check if the path if connected and nullify it if not
+      /* Check if the path if connected and nullify it if not */
       if (tree == st->current_tree) {
         rrt_check_path(st);
 
-        // Store the first node of the path
+        /* Store the first node of the path */
         if (st->path)
           path_node = st->path->val;
       }
 
-      // Prepare tree rebuilding
+      /* Prepare tree rebuilding */
       for (i_node1 = tree->nodes; i_node1 != NULL; i_node1 = i_node1->next) {
         node1 = i_node1->val;
         node1->marked = false;
@@ -460,19 +446,19 @@ static void rrt_prune(struct state *st)
         node1->marked = true;
         list_insert(&visited_nodes, node1);
 
-        // Create a tree listing all the connected nodes
+        /* Create a tree listing all the connected nodes */
         while (visited_nodes != NULL) {
           extracted_node = list_pop(&visited_nodes);
           list_insert(&new_tree->nodes, extracted_node);
           ++new_tree->size;
 
-          // The tree containing the path is the current tree
+          /* The tree containing the path is the current tree */
           if (path_node && path_node == extracted_node) {
             st->current_tree = new_tree;
             path_node = NULL;
           }
 
-          // Go through the neighbors not already visited and add them to the new tree
+          /* Go through the neighbors not already visited and add them to the new tree */
           for (i_node1 = extracted_node->neighbors; i_node1 != NULL; i_node1 = i_node1->next) {
             node1 = i_node1->val;
             if (!node1->marked) {
@@ -483,7 +469,7 @@ static void rrt_prune(struct state *st)
           }
         }
 
-        // Add the new tree to tree list
+        /* Add the new tree to tree list */
         rrt_insert_tree(st, new_tree);
       }
     } else {
@@ -523,21 +509,21 @@ static bool rrt_extend_trees(struct state *st)
   float action = frand(1.0);
 
   if (action < GOAL_ACTION) {
-    // Try to connect to the goal
+    /* Try to connect to the goal */
     Node *nearest_node = rrt_nearest_neighbor(st->current_tree, st->goal, NULL);
     if (nearest_node && !line_obstacles_collision(st->obstacles, st->nbobstacles, nearest_node->pos, st->goal)) {
-      // Keep track of the tree containing the goal node
+      /* Keep track of the tree containing the goal node */
       st->goal_node = tree_connect_point(st->current_tree, nearest_node, st->goal);
       return true;
     }
   } else if (action < CONNECT_ACTION && st->nbtrees > 1) {
-    // Tree to connect to the current tree
+    /* Tree to connect to the current tree */
     Item *i_tree, *i_node;
-    Node *node, *cur_node, *nearest_node, *cur_nearest_node;
+    Node *node, *cur_node, *nearest_node = NULL, *cur_nearest_node = NULL;
     Tree *tree;
     float dist, min_dist = -1.0;
 
-    // Select and extract a random non-current tree
+    /* Select and extract a random non-current tree */
     int tree_to_connect = random() % st->nbtrees - 1;
     for (i_tree = st->trees; i_tree != NULL && tree_to_connect > 0; i_tree = i_tree->next) {
       if (i_tree->val != st->current_tree)
@@ -546,7 +532,7 @@ static bool rrt_extend_trees(struct state *st)
 
     tree = list_extract(&st->trees, i_tree);
 
-    // Find the nearest nodes between the current and the select tree
+    /* Find the nearest nodes between the current and the select tree */
     for (i_node = st->current_tree->nodes; i_node != NULL; i_node = i_node->next) {
       cur_node = i_node->val;
       node = rrt_nearest_neighbor(tree, cur_node->pos, &dist);
@@ -557,7 +543,7 @@ static bool rrt_extend_trees(struct state *st)
       }
     }
 
-    // Connect the trees
+    /* Connect the trees */
     if (!line_obstacles_collision(st->obstacles, st->nbobstacles, nearest_node->pos, cur_nearest_node->pos)) {
       list_insert(&cur_nearest_node->neighbors, nearest_node);
       list_insert(&nearest_node->neighbors, cur_nearest_node);
@@ -579,17 +565,17 @@ static bool rrt_extend_trees(struct state *st)
 
 static void rrt_compute_path(struct state *st)
 {
-  Item *i_node, *i_next_node, *i_tree;
-  Node *node, *start_node, *cur_node;
-  Tree *tree;
+  Item *i_node, *i_next_node = NULL, *i_tree;
+  Node *node, *start_node = NULL, *cur_node;
+  Tree *tree = NULL;
   float dist, min_dist = -1.0;
   List opened_nodes;
 
-  // We already have a valid path
+  /* We already have a valid path */
   if (st->path)
     return;
 
-  // Find the nearest tree to the robot
+  /* Find the nearest tree to the robot */
   for (i_tree = st->trees; i_tree != NULL; i_tree = i_tree->next) {
     node = rrt_nearest_neighbor(i_tree->val, st->robot, &dist);
     if (dist < min_dist || min_dist < 0.0) {
@@ -599,8 +585,8 @@ static void rrt_compute_path(struct state *st)
     }
   }
 
-  // Compute the current tree by trying to connect the robot to the nearest tree
-  if (!line_obstacles_collision(st->obstacles, st->nbobstacles, start_node->pos, st->robot)) {
+  /* Compute the current tree by trying to connect the robot to the nearest tree */
+  if (tree && !line_obstacles_collision(st->obstacles, st->nbobstacles, start_node->pos, st->robot)) {
     st->current_tree = tree;
     tree_connect_point(tree, start_node, st->robot);
   } else {
@@ -612,12 +598,14 @@ static void rrt_compute_path(struct state *st)
     return;
   }
 
-  // There is no way to the goal, don't look for a path
+  /*  There is no way to the goal, don't look for a path */
   if (!list_search(st->current_tree->nodes, st->goal_node))
     return;
 
-  // Find shortest path (Dijkstra's algorithm)
-  // STEP 1: Initialization
+  /*
+   * Find shortest path (Dijkstra's algorithm)
+   * STEP 1: Initialization
+   */
   for (i_node = st->current_tree->nodes; i_node != NULL; i_node = i_node->next) {
     node = i_node->val;
     node->marked = false;
@@ -629,7 +617,10 @@ static void rrt_compute_path(struct state *st)
   start_node->marked = true;
   node = NULL;
 
-  // STEP 2: Algorithm
+  /*
+   * STEP 2: Algorithm
+   */
+  cur_node = NULL;
   while (node != st->goal_node && opened_nodes != NULL) {
     min_dist = -1.0;
     for (i_node = opened_nodes; i_node != NULL; i_node = i_node->next) {
@@ -661,8 +652,10 @@ static void rrt_compute_path(struct state *st)
     }
   }
 
-  // STEP 3: Compute path
-  if (cur_node == st->goal_node) {
+  /*
+   * STEP 3: Compute path
+   */
+  if (st->goal_node && cur_node == st->goal_node) {
     for (node = st->goal_node; node != NULL; node = node->prev) {
       list_insert(&st->path, node);
     }
@@ -676,7 +669,7 @@ static bool rrt_update(struct state *st)
   Node *node;
   float dist, remaining_dist = st->robot_speed * st->delay;
 
-  // Move the obstacles
+  /* Move the obstacles */
   for (i = 0; i < st->nbobstacles; ++i) {
     obs = &st->obstacles[i];
     obs->pos.x += obs->v.x;
@@ -689,11 +682,11 @@ static bool rrt_update(struct state *st)
       obs->v.y = -obs->v.y;
   }
 
-  // No path, do not move the robot
+  /* No path, do not move the robot */
   if (!st->path)
     return false;
 
-  // Move the robot along the path
+  /* Move the robot along the path */
   while (remaining_dist > 0 && st->path != NULL) {
     node = list_pop(&st->path);
     dist = points_distance(st->robot, node->pos);
@@ -850,16 +843,16 @@ static unsigned long dynamicrrt_draw(Display *dpy, Window window, void *closure)
   bool arrived = false;
   struct state *st = (struct state*) closure;
 
-  // Prune nodes for collision
+  /* Prune nodes for collision */
   rrt_prune(st);
 
-  // Compute a path
+  /* Compute a path */
   rrt_compute_path(st);
 
-  // No path, try to add nodes and connect trees
+  /* No path, try to add nodes and connect trees */
   if (!st->path) {
     for (i = 0; i < st->max_steps; ++i) {
-      // Try to compute a new path if we rreachedeached the goal
+      /* Try to compute a new path if we rreachedeached the goal */
       if (rrt_extend_trees(st)) {
         rrt_compute_path(st);
         break;
@@ -867,28 +860,30 @@ static unsigned long dynamicrrt_draw(Display *dpy, Window window, void *closure)
     }
   }
 
-  // If their is a path, update the position of the robot
+  /* If their is a path, update the position of the robot */
   arrived = rrt_update(st);
 
-  // -------------------------
-  // DRAWING
-  // -------------------------
+  /*
+   * -------------------------
+   *  DRAWING
+   * -------------------------
+   */
 
-  // Clear everything
+  /* Clear everything */
   XFillRectangle (st->dpy, st->b, st->gcClear, 0, 0, st->scrWidth, st->scrHeight);
 
-  // Robot
+  /* Robot */
   XSetForeground(st->dpy, st->gcDraw, st->colors[COLOR_ROBOT].pixel);
   XFillArc(st->dpy, st->window, st->gcDraw, st->robot.x + OFFSET, st->robot.y + OFFSET, st->robot_radius * 2, st->robot_radius * 2, 0, 360 * 64);
 
-  // Obstacle
+  /* Obstacle */
   XSetForeground(st->dpy, st->gcDraw, st->colors[COLOR_OBSTACLES].pixel);
   for (i = 0; i < st->nbobstacles; ++i) {
     obs = &st->obstacles[i];
     XFillArc(st->dpy, st->window, st->gcDraw, obs->pos.x + OFFSET, obs->pos.y + OFFSET, obs->radius * 2, obs->radius * 2, 0, 360 * 64);
   }
 
-  // Trees
+  /* Trees */
   for (i_tree = st->trees; i_tree != NULL; i_tree = i_tree->next) {
     tree = i_tree->val;
     XSetForeground(st->dpy, st->gcDraw, st->colors[tree == st->current_tree ? COLOR_LINES : COLOR_OTHER_LINES].pixel);
@@ -901,7 +896,7 @@ static unsigned long dynamicrrt_draw(Display *dpy, Window window, void *closure)
     }
   }
 
-  // Swip buffers
+  /* Swip buffers */
 #ifdef HAVE_DOUBLE_BUFFER_EXTENSION
   if (st->backb) {
     XdbeSwapInfo info[1];
@@ -916,7 +911,7 @@ static unsigned long dynamicrrt_draw(Display *dpy, Window window, void *closure)
       st->b = (st->b == st->ba ? st->bb : st->ba);
     }
 
-  // We arrived, reset the screen
+  /* We arrived, reset the screen */
   if (arrived) {
     rrt_free(st);
     rrt_simulation_init(st);
