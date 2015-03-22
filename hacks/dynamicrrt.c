@@ -23,11 +23,6 @@
 #define COLOR_ROBOT        2
 #define COLOR_OBSTACLES    3
 
-#define OFFSET            50
-
-#define GOAL_ACTION      0.4
-#define CONNECT_ACTION   0.4
-
 typedef struct {
   float x;
   float y;
@@ -87,8 +82,12 @@ struct state {
   int nbobstacles;
   float obstacle_radius;
   float robot_radius;
-  float max_speed;
+  float obstacle_speed;
   float robot_speed;
+  float offset;
+
+  float goal_action;
+  float connect_action;
 
   Obstacle* obstacles;
   Point robot;
@@ -519,7 +518,7 @@ static bool rrt_extend_trees(struct state *st)
 {
   float action = frand(1.0);
 
-  if (action < GOAL_ACTION) {
+  if (action < st->goal_action) {
     /* Try to connect to the goal */
     Node *nearest_node = rrt_nearest_neighbor(st->current_tree, st->goal, NULL);
     if (nearest_node && !line_obstacles_collision(st->obstacles, st->nbobstacles, nearest_node->pos, st->goal)) {
@@ -528,7 +527,7 @@ static bool rrt_extend_trees(struct state *st)
       st->goal_tree = st->current_tree;
       return true;
     }
-  } else if (action < CONNECT_ACTION && st->nbtrees > 1) {
+  } else if (action < st->connect_action && st->nbtrees > 1) {
     /* Tree to connect to the current tree */
     Item *i_tree, *i_node;
     Node *node, *cur_node, *nearest_node = NULL, *cur_nearest_node = NULL;
@@ -743,9 +742,9 @@ static void rrt_simulation_init(struct state *st)
     st->obstacles[i].pos = rrt_random_point(st);
     st->obstacles[i].radius = st->obstacle_radius;
     do {
-      st->obstacles[i].v.x = frand(st->max_speed * 2) - st->max_speed;
-      st->obstacles[i].v.y = frand(st->max_speed * 2) - st->max_speed;
-    } while (vector_norm(st->obstacles[i].v) < st->max_speed * st->max_speed / 2);
+      st->obstacles[i].v.x = frand(st->obstacle_speed * 2) - st->obstacle_speed;
+      st->obstacles[i].v.y = frand(st->obstacle_speed * 2) - st->obstacle_speed;
+    } while (vector_norm(st->obstacles[i].v) < st->obstacle_speed * st->obstacle_speed / 2);
   }
 
   st->robot.x = 0.0;
@@ -783,14 +782,23 @@ static void* dynamicrrt_init(Display *dpy, Window win)
   make_random_colormap(st->wa.screen, st->wa.visual, st->wa.colormap, st->colors, &st->nbcolors, True, True, 0, True);
 
   st->delay = get_integer_resource(st->dpy, "delay", "Integer");
-
   st->nbobstacles = get_integer_resource(st->dpy, "obstacles", "Integer");
   st->obstacle_radius = get_float_resource(st->dpy, "obstacleradius", "Float");
   st->robot_radius = get_float_resource(st->dpy, "robotradius", "Float");
-  st->max_speed = get_float_resource(st->dpy, "maxspeed", "Float");
+  st->obstacle_speed = get_float_resource(st->dpy, "obstaclespeed", "Float");
   st->robot_speed = get_float_resource(st->dpy, "robotspeed", "Float");
   st->max_trees = get_integer_resource(st->dpy, "maxtrees", "Integer");
   st->max_steps = get_integer_resource(st->dpy, "maxsteps", "Integer");
+  st->goal_action = get_float_resource(st->dpy, "obstacleradius", "Float");
+  st->robot_radius = get_float_resource(st->dpy, "robotradius", "Float");
+
+  if (st->goal_action < 0 || st->goal_action > 1)
+    st->goal_action = 0.4;
+
+  if (st->connect_action < 0 || st->connect_action + st->goal_action > 1)
+    st->connect_action = 0.4;
+
+  st->offset = st->obstacle_radius;
 
   st->dbuf = True;
 
@@ -806,8 +814,8 @@ static void* dynamicrrt_init(Display *dpy, Window win)
 
   st->scrWidth = st->wa.width;
   st->scrHeight = st->wa.height;
-  st->mapWidth = st->wa.width - 2 * OFFSET;
-  st->mapHeight = st->wa.height - 2 * OFFSET;
+  st->mapWidth = st->wa.width - 2 * st->offset;
+  st->mapHeight = st->wa.height - 2 * st->offset;
   st->cmap = st->wa.colormap;
   st->gcDraw = XCreateGC(st->dpy, st->window, 0, &st->gcv);
   st->gcv.foreground = get_pixel_resource(st->dpy, st->cmap, "background", "Background");
@@ -885,21 +893,21 @@ static unsigned long dynamicrrt_draw(Display *dpy, Window window, void *closure)
       node1 = i_node1->val;
       for (i_node2 = node1->neighbors; i_node2 != NULL; i_node2 = i_node2->next) {
         node2 = i_node2->val;
-        XDrawLine(st->dpy, st->b, st->gcDraw, node1->pos.x + OFFSET, node1->pos.y + OFFSET, node2->pos.x + OFFSET, node2->pos.y + OFFSET);
+        XDrawLine(st->dpy, st->b, st->gcDraw, node1->pos.x + st->offset, node1->pos.y + st->offset, node2->pos.x + st->offset, node2->pos.y + st->offset);
       }
     }
   }
 
   /* Robot */
   XSetForeground(st->dpy, st->gcDraw, st->colors[COLOR_ROBOT].pixel);
-  XFillArc(st->dpy, st->b, st->gcDraw, st->robot.x - st->robot_radius + OFFSET, st->robot.y - st->robot_radius + OFFSET,
+  XFillArc(st->dpy, st->b, st->gcDraw, st->robot.x - st->robot_radius + st->offset, st->robot.y - st->robot_radius + st->offset,
       st->robot_radius * 2, st->robot_radius * 2, 0, 360 * 64);
 
   /* Obstacle */
   XSetForeground(st->dpy, st->gcDraw, st->colors[COLOR_OBSTACLES].pixel);
   for (i = 0; i < st->nbobstacles; ++i) {
     obs = &st->obstacles[i];
-    XFillArc(st->dpy, st->b, st->gcDraw, obs->pos.x - obs->radius + OFFSET, obs->pos.y - obs->radius + OFFSET,
+    XFillArc(st->dpy, st->b, st->gcDraw, obs->pos.x - obs->radius + st->offset, obs->pos.y - obs->radius + st->offset,
         obs->radius * 2, obs->radius * 2, 0, 360 * 64);
   }
 
@@ -934,8 +942,8 @@ static void dynamicrrt_reshape(Display *dpy, Window window, void *closure, unsig
   if (w != st->scrWidth || h != st->scrHeight) {
     st->scrWidth = w;
     st->scrHeight = h;
-    st->mapWidth = w - 2 * OFFSET;
-    st->mapHeight = h - 2 * OFFSET;
+    st->mapWidth = w - 2 * st->offset;
+    st->mapHeight = h - 2 * st->offset;
     rrt_restart(st);
   } 
 }
@@ -962,12 +970,14 @@ static const char *dynamicrrt_defaults [] = {
   ".background: black",
   "*obstacleradius: 40",
   "*robotradius: 10",
-  "*maxspeed: 3.0",
-  "*robotspeed: 3.0",
+  "*obstaclespeed: 6.0",
+  "*robotspeed: 6.0",
   "*maxtrees: 5",
   "*maxsteps: 10",
   "*delay: 20000",
-  "*obstacles: 3",
+  "*obstacles: 10",
+  "*goalacction: 0.4",
+  "*connectaction: 0.4",
 #ifdef HAVE_DOUBLE_BUFFER_EXTENSION
   "*useDBE: True",
 #endif
@@ -978,11 +988,13 @@ static XrmOptionDescRec dynamicrrt_options [] = {
   { "-delay"         , ".delay"         , XrmoptionSepArg, 0 },
   { "-obstacleradius", ".obstacleradius", XrmoptionSepArg, 0 },
   { "-robotradius"   , ".robotradius"   , XrmoptionSepArg, 0 },
-  { "-maxspeed"      , ".maxspeed"      , XrmoptionSepArg, 0 },
+  { "-obstaclespeed" , ".obstaclespeed" , XrmoptionSepArg, 0 },
   { "-robotspeed"    , ".robotspeed"    , XrmoptionSepArg, 0 },
   { "-maxtrees"      , ".maxtrees"      , XrmoptionSepArg, 0 },
   { "-maxsteps"      , ".maxsteps"      , XrmoptionSepArg, 0 },
   { "-obstacles"     , ".obstacles"     , XrmoptionSepArg, 0 },
+  { "-goalaction"    , ".goalaction"    , XrmoptionSepArg, 0 },
+  { "-connectaction" , ".connectaction" , XrmoptionSepArg, 0 },
   { 0                , 0                , 0              , 0 }
 };
 

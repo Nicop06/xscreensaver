@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+
+<screensaver name="Rynamicrrt" _label="DynamicRRT">
+
+  <command arg="-root"/>
+
+  <number id="delay" type="slider" arg="-delay %"
+          _label="Frame rate" _low-label="Low" _high-label="High"
+          low="0" high="50000" default="10000"
+          convert="invert"/>
+
+  <number id="obstacleradius" type="slider" arg="-obstacleradius %"
+          _label="Radius" _low-label="Small" _high-label="Large"
+          low="1" high="150" default="40"/>
+
+  <number id="obstacleradius" type="slider" arg="-obstacleradius %"
+          _label="Obstacles Radius" _low-label="Small" _high-label="Large"
+          low="1" high="150" default="40"/>
+
+  <number id="robotradius" type="slider" arg="-robotradius %"
+          _label="Robot Radius" _low-label="Small" _high-label="Large"
+           low="1" high="100" default="10"/>
+
+  <number id="obstaclespeed" type="slider" arg="-obstaclespeed %"
+          _label="Obstacles Speed" _low-label="Slow" _high-label="Fast"
+           low="0" high="50" default="6"/>
+
+  <number id="robotspeed" type="slider" arg="-robotspeed %"
+          _label="Robot Speed" _low-label="Slow" _high-label="Fast"
+           low="0" high="50" default="6"/>
+
+  <number id="obstacles" type="slider" arg="-robotspeed %"
+          _label="Obstacles" _low-label="0" _high-label="50"
+           low="0" high="50" default="5"/>
+
+  <number id="goalaction" type="slider" arg="-goalaction %"
+          _label="Goal Action" _low-label="0" _high-label="100"
+          low="0.0" high="1" default="0.4"/>
+
+  <number id="connectaction" type="slider" arg="-connectaction %"
+          _label="Connect Action" _low-label="0" _high-label="100"
+          low="0.0" high="1" default="0.4"/>
+
+  <boolean id="showfps" _label="Show frame rate" arg-set="-fps"/>
+
+  <xscreensaver-updater />
+
+  <_description>
+Robot motion planning in dynamic environment.
+
+Written by Nicolas Porcel; 2015
+  </_description>
+</screensaver>

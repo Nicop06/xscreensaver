@@ -59,6 +59,7 @@ hacks/config/discrete.xml
 hacks/config/distort.xml
 hacks/config/dnalogo.xml
 hacks/config/drift.xml
+hacks/config/dynamicrrt.xml
 hacks/config/endgame.xml
 hacks/config/engine.xml
 hacks/config/epicycle.xml

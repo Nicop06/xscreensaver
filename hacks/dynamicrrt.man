@@ -1,33 +1,46 @@
 .TH XScreenSaver 1 "" "X Version 11"
 .SH NAME
-anemotaxis - directional search on a plane.
+dynamicrrt - robot motion planning in dynamic environment.
 .SH SYNOPSIS
-.B anemotaxis
+.B dynamicrrt
 [\-display \fIhost:display.screen\fP]
 [\-visual \fIvisual\fP]
 [\-window]
 [\-root]
-[\-delay \fInumber\fP]
-[\-distance \fInumber\fP]
-[\-sources \fInumber\fP]
-[\-searchers \fInumber\fP]
+[\-delay \fIinteger\fP]
+[\-obstacleradius \fIreal\fP]
+[\-robotradius \fIreal\fP]
+[\-obstaclespeed \fIreal\fP]
+[\-robotspeed \fIreal\fP]
+[\-maxtrees \fIinteger\fP]
+[\-maxsteps \fIinteger\fP]
+[\-obstacles \fIinteger\fP]
+[\-goalaction \fIreal\fP]
+[\-connectaction \fIreal\fP]
 [\-fps]
 .SH DESCRIPTION
-The program demonstrates a search algorithm designed for locating a
-source of odor in turbulent atmosphere. The odor is convected by wind
-which has a constant mean direction and fluctuations around it. The
-searcher is able to sense the odor and determine local instantaneous
-wind direction. The goal is to find the source in the shortest mean
-time.  Some animals face this task to find mates, food, home etc. They
-exhibit very particular, zigzagging search trajectories.
+The program demonstrates a robot motion planning algorithm to find
+a path from one point to another avoiding the different obstacles. In
+this program, we are using a dynamic RRT (Rapidly exploring Random Tree)
+algorithm which will build a tree representing the available actions and
+find a way to the goal. It is also dynamic as the robot will avoid moving
+obstacles. It will keep several trees resulting from the original tree
+after being cut by the obstacles when they move. The robot will try to
+go from the top left corner to the top right corner of the screen.
 
-This is modeled as a search on a discrete two-dimensional lattice. The
-source releases particles that drift with constant velocity in one
-direction and walk randomly in the other direction. The searcher knows
-if it hit a particle, and if so, particle's position one time step
-earlier (local wind direction). The program paints sources and
-particles released by them as well as trajectories of searchers who are
-trying to capture the sources.
+The algorithm works as followed. At each step, if no path have been found,
+it will try to do 3 actions. The first one is to try to connect the goal
+to the current tree (the one containing the robot). The second action is
+to try reconnecting two trees. The last action is to generate a new position
+and connect it to the current tree. Then, after moving the robot and the
+obstacles, if an obstacle is such that going from one node to another of a
+tree is impossible without colliding, then the tree is cut in two pieces,
+which cat be reconnected after when the obstacle leaves. Once one of the,
+trees contain the position of the robot and the goal, a path to the goal is
+computed and the robot starts moving.
+
+When the robot reaches the goal, the simulation is reinitialized and starts
+over.
 .SH OPTIONS
 .TP 8
 .B \-visual \fIvisual\fP
@@ -40,17 +53,35 @@ Draw on a newly-created window.  This is the default.
 .B \-root
 Draw on the root window.
 .TP 8
-.B \-delay \fInumber\fP
+.B \-delay \fIinteger\fP
 Per-frame delay, in microseconds.  Default: 20000 (0.02 seconds.).
 .TP 8
-.B \-distance \fInumber\fP
-Max initial distance to the source .  10 - 250.  Default: 40.
+.B \-obstacleradius \fIreal\fP
+Radius of the circular obstacles in pixels. Default: 40
 .TP 8
-.B \-sources \fInumber\fP
-Max number of sources.  Default: 25.
+.B \-robotradius \fIreal\fP
+Radius of the robot in pixels. Default: 10
 .TP 8
-.B \-searchers \fInumber\fP
-Max number of searchers. Default: 25.
+.B \-obstaclespeed \fIreal\fP
+Speed of the obstacles in pixels per frame. Default: 6.0
+.TP 8
+.B \-robotspeed \fIreal\fP
+Speed of the robot in pixels per frame. Default: 6.0
+.TP 8
+.B \-maxtrees \fIinteger\fP
+Maximum number of trees to keep. Default: 5
+.TP 8
+.B \-maxsteps \fIinteger\fP
+Maximum number of actions to do per frame. Default: 10
+.TP 8
+.B \-obstacles \fIinteger\fP
+Number of moving obstacles. Default: 5
+.TP 8
+.B \-goalaction \fIreal\fP
+The probability to pick the action "connect to the goal" (between 0 and 1). Default: 0.4
+.TP 8
+.B \-connectaction \fIreal\fP
+The probability to pick the action "connect two trees" (between 0 and 1). Default: 0.4
 .TP 8
 .B \-fps
 Display the current frame rate and CPU load.
@@ -67,7 +98,7 @@ stored in the RESOURCE_MANAGER property.
 .BR X (1),
 .BR xscreensaver (1)
 .SH COPYRIGHT
-Copyright \(co 2004 by Eugene Balkovsky.  Permission to use, copy, modify, 
+Copyright \(co 2015 by Nicolas Porcel.  Permission to use, copy, modify, 
 distribute, and sell this software and its documentation for any purpose is 
 hereby granted without fee, provided that the above copyright notice appear 
 in all copies and that both that copyright notice and this permission notice
@@ -75,4 +106,4 @@ appear in supporting documentation.  No representations are made about the
 suitability of this software for any purpose.  It is provided "as is" without
 express or implied warranty.
 .SH AUTHOR
-Eugene Balkovsky
+Nicolas Porcel
