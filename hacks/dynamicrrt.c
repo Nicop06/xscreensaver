@@ -185,13 +185,12 @@ static void* list_remove(List *list, void *val)
 
 static void list_delete(List *list, void (*val_delete)(void*))
 {
-  Item *item;
-  for (item = *list; item != NULL; item = item->next) {
+  void *val;
+  while (*list != NULL) {
+    val = list_pop(list);
     if (val_delete)
-      val_delete(item->val);
-    free(item);
+      val_delete(val);
   }
-  *list = NULL;
 }
 
 static void list_concatenate(List *list1, List list2)
@@ -357,10 +356,16 @@ static void rrt_insert_tree(struct state *st, Tree *new_tree)
   /* Remove the smallest tree if the list is too big */
   if (++st->nbtrees > st->max_trees) {
     tree = list_pop(&st->trees);
-    --st->nbtrees;
+
+    /* Do not extract the current tree */
+    if (tree == st->current_tree && tree != NULL) {
+      tree = list_pop(&st->trees);
+      list_insert(&st->trees, st->current_tree);
+    }
 
     /* Do not delete the current tree (holding the path) */
-    if (tree != st->current_tree && tree != NULL) {
+    if (tree != NULL) {
+      --st->nbtrees;
       /* The tree containing the goal has been removed */
       if (tree == st->goal_tree) {
         st->goal_tree = NULL;
@@ -481,14 +486,11 @@ static void rrt_prune(struct state *st)
         /* Add the new tree to tree list */
         rrt_insert_tree(st, new_tree);
       }
+
+      free(tree);
     } else {
       rrt_insert_tree(st, tree);
     }
-  }
-
-  if (st->current_tree && !list_search(st->trees, st->current_tree)) {
-    list_insert(&st->trees, st->current_tree);
-    ++st->nbtrees;
   }
 }
 
@@ -669,6 +671,8 @@ static void rrt_compute_path(struct state *st)
     }
   }
 
+  list_delete(&opened_nodes, NULL);
+
   /*
    * STEP 3: Compute path
    */
@@ -726,6 +730,7 @@ static void rrt_free(struct state *st)
 {
   list_delete(&st->path, NULL);
   list_delete(&st->trees, (void (*)(void*)) &tree_delete);
+  free(st->obstacles);
 }
 
 static void rrt_simulation_init(struct state *st)
@@ -830,6 +835,8 @@ static void* dynamicrrt_init(Display *dpy, Window win)
 
   return st;
 }
+
+static void dynamicrrt_free(Display *dpy, Window window, void *closure);
 
 static unsigned long dynamicrrt_draw(Display *dpy, Window window, void *closure)
 {
@@ -942,6 +949,8 @@ static void dynamicrrt_free(Display *dpy, Window window, void *closure)
 {
   struct state *st = (struct state *) closure;
   rrt_free(st);
+  XFreeGC(st->dpy, st->gcDraw);
+  XFreeGC(st->dpy, st->gcClear);
   free(st->colors);
   free(st);
 }
